@@ -17,10 +17,12 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     private string _resetText = string.Empty;
     private string _forecastText = string.Empty;
     private double _percent;
+    private double _projectedPercent;
     private double _used;
     private double _budget;
     private bool _willRunOut;
     private Brush _barBrush = Theme.Accent;
+    private Brush _projectionBrush = Theme.AccentSoft;
     private Brush _forecastBrush = Theme.Accent;
     private DateTimeOffset _resetAt;
 
@@ -73,7 +75,20 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         private set => Set(ref _barBrush, value);
     }
 
-    /// <summary>消耗速率与耗尽预测，例如「≈ 1,240/分 · 约 8 分钟后用尽」。</summary>
+    /// <summary>按当前速率，到重置时预计会用到的位置；缓冲段画到这里。</summary>
+    public double ProjectedPercent
+    {
+        get => _projectedPercent;
+        private set => Set(ref _projectedPercent, value);
+    }
+
+    public Brush ProjectionBrush
+    {
+        get => _projectionBrush;
+        private set => Set(ref _projectionBrush, value);
+    }
+
+    /// <summary>消耗速率与耗尽预测，例如「均 26/分 · 预计用到 68%」。</summary>
     public string ForecastText
     {
         get => _forecastText;
@@ -147,6 +162,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         {
             // 窗口刚开始，或者窗口名不认识
             WillRunOut = false;
+            SetProjection(Percent);
             ForecastText = "窗口刚开始";
             ForecastBrush = Muted;
             return;
@@ -155,10 +171,17 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         if (estimate.PerMinute <= 0d)
         {
             WillRunOut = false;
+            SetProjection(Percent);
             ForecastText = "本窗口暂无消耗";
             ForecastBrush = Muted;
             return;
         }
+
+        // 缓冲段：已用量加上剩余时间里预计还会消耗的量
+        var untilReset = _resetAt - now;
+        var projectedUsed = _used + estimate.PerMinute * Math.Max(0d, untilReset.TotalMinutes);
+        var projected = _budget > 0d ? projectedUsed / _budget * 100d : Percent;
+        SetProjection(projected);
 
         var rateText = $"均 {estimate.PerMinute:N0}/分";
         if (estimate.ExhaustIn is not { } exhaust)
@@ -169,7 +192,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (exhaust < _resetAt - now)
+        if (exhaust < untilReset)
         {
             WillRunOut = true;
             ForecastText = $"{rateText} · 约 {Humanize(exhaust)}后用尽";
@@ -178,8 +201,20 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         }
 
         WillRunOut = false;
-        ForecastText = $"{rateText} · 重置前用不完";
+        ForecastText = $"{rateText} · 预计用到 {ProjectedPercent:0.#}%";
         ForecastBrush = Muted;
+    }
+
+    /// <summary>缓冲段不会短于已用段，也不会超出满格。</summary>
+    private void SetProjection(double projected)
+    {
+        ProjectedPercent = Math.Clamp(projected, Percent, 100d);
+        ProjectionBrush = ProjectedPercent switch
+        {
+            >= 85d => Theme.CriticalSoft,
+            >= 60d => Theme.WarningSoft,
+            _ => Theme.AccentSoft
+        };
     }
 
     private static string Humanize(TimeSpan span) => span switch

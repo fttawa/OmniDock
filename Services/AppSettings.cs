@@ -124,16 +124,47 @@ internal static class SettingsStore
 /// <summary>当前生效的强调色。用量条和状态灯都从这里取。</summary>
 internal static class Theme
 {
+    /// <summary>缓冲段（预计用量）的不透明度。</summary>
+    private const byte SoftAlpha = 0x4D;
+
     private static Brush _accent = Freeze(AppSettings.AccentPresets[0]);
+    private static Brush _accentSoft = FreezeSoft(AppSettings.AccentPresets[0]);
 
     internal static Brush Accent => _accent;
+
+    /// <summary>强调色的半透明版，画预计用量的缓冲段。</summary>
+    internal static Brush AccentSoft => _accentSoft;
 
     /// <summary>水位偏高时的警示色，语义固定，不跟着强调色走。</summary>
     internal static Brush Warning { get; } = Freeze("#E8C468");
 
+    internal static Brush WarningSoft { get; } = FreezeSoft("#E8C468");
+
     internal static Brush Critical { get; } = Freeze("#E8746C");
 
-    internal static void SetAccent(string hex) => _accent = Freeze(hex);
+    internal static Brush CriticalSoft { get; } = FreezeSoft("#E8746C");
+
+    internal static void SetAccent(string hex)
+    {
+        _accent = Freeze(hex);
+        _accentSoft = FreezeSoft(hex);
+    }
+
+    /// <summary>同色但半透明。这些画刷是静态复用的，免得每秒新建触发重绘。</summary>
+    private static Brush FreezeSoft(string hex)
+    {
+        try
+        {
+            var color = (Color)ColorConverter.ConvertFromString(hex);
+            var brush = new SolidColorBrush(Color.FromArgb(SoftAlpha, color.R, color.G, color.B));
+            brush.Freeze();
+            return brush;
+        }
+        catch (FormatException)
+        {
+            return Brushes.Transparent;
+        }
+    }
 
     internal static Brush Freeze(string hex)
     {

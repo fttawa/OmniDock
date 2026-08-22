@@ -124,11 +124,17 @@
                                                             VerticalAlignment="Center" />
                             </Grid>
 
-                            <!-- 绑 SmoothProgress.Target 而不是 Value，让水位平滑移动 -->
-                            <ProgressBar Style="{StaticResource UsageBarStyle}"
-                                         controls:SmoothProgress.Target="{Binding Percent, Mode=OneWay}"
-                                         Foreground="{Binding BarBrush}"
-                                         Margin="0,6,0,0" />
+                            <!-- 两条叠加：半透明的缓冲段是按当前速率预计到重置时会用到的位置，
+                                 实色的是当前已用。绑 SmoothProgress.Target 而不是 Value，让水位平滑移动 -->
+                            <Grid Margin="0,6,0,0">
+                                <ProgressBar Style="{StaticResource UsageBarStyle}"
+                                             controls:SmoothProgress.Target="{Binding ProjectedPercent, Mode=OneWay}"
+                                             Foreground="{Binding ProjectionBrush}" />
+                                <ProgressBar Style="{StaticResource UsageBarStyle}"
+                                             Background="Transparent"
+                                             controls:SmoothProgress.Target="{Binding Percent, Mode=OneWay}"
+                                             Foreground="{Binding BarBrush}" />
+                            </Grid>
 
                             <!-- 消耗速率与耗尽预测。文字结构一直在变，用普通 TextBlock
                                  而不是滚动数字，免得每秒整排重建 -->

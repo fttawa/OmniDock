@@ -65,10 +65,12 @@
             <Setter Property="Height" Value="5" />
             <Setter Property="Minimum" Value="0" />
             <Setter Property="Maximum" Value="100" />
+            <!-- 轨道色走 Background，叠加时上面那条设成透明就不会盖住缓冲段 -->
+            <Setter Property="Background" Value="#1FFFFFFF" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ProgressBar">
-                        <Border Background="#1FFFFFFF" CornerRadius="2.5" ClipToBounds="True">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="2.5" ClipToBounds="True">
                             <Grid>
                                 <Border x:Name="PART_Track" />
                                 <Border x:Name="PART_Indicator"
