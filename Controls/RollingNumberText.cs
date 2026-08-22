@@ -29,7 +29,13 @@ public sealed class RollingNumberText : UserControl
     {
         Content = _panel;
         Focusable = false;
+
+        // 构造时还拿不到真实 DPI，等进了视觉树再按实际缩放重算一次格高
+        Loaded += (_, _) => Rebuild(Text);
     }
+
+    /// <summary>拖到另一块不同缩放的屏幕上时，格高要跟着重算。</summary>
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi) => Rebuild(Text);
 
     public string Text
     {
@@ -131,18 +137,24 @@ public sealed class RollingNumberText : UserControl
         }
     }
 
-    /// <summary>按当前字体实测一格的尺寸：宽取 0-9 里最宽的，高取字体行高。</summary>
+    /// <summary>
+    /// 按当前字体实测一格的尺寸：宽取 0-9 里最宽的，高取字体行高。
+    ///
+    /// 尺寸会向上取到整数个「物理」像素。位移量是格高的整数倍，
+    /// 如果格高换算成物理像素带小数（例如 125% 缩放下的 14 DIP = 17.5px），
+    /// 奇数格就会停在半像素上，看起来上下错开一点且发虚。
+    /// </summary>
     private (double Width, double Height) MeasureDigitCell()
     {
         var typeface = new Typeface(FontFamily, FontStyle, FontWeight, FontStretch);
-        var pixelsPerDip = 1d;
+        var dpi = new DpiScale(1d, 1d);
         try
         {
-            pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            dpi = VisualTreeHelper.GetDpi(this);
         }
         catch (InvalidOperationException)
         {
-            // 还没进视觉树时取不到 DPI，用 1 也能得到正确的 DIP 尺寸
+            // 还没进视觉树，先按 1:1 算，Loaded 之后会重建
         }
 
         var width = 0d;
@@ -156,38 +168,70 @@ public sealed class RollingNumberText : UserControl
                 typeface,
                 FontSize,
                 Brushes.White,
-                pixelsPerDip);
+                dpi.PixelsPerDip);
 
             width = Math.Max(width, measured.WidthIncludingTrailingWhitespace);
             height = Math.Max(height, measured.Height);
         }
 
-        return (Math.Ceiling(width) + 1d, Math.Ceiling(height));
+        return (SnapUp(width + 1d, dpi.DpiScaleX), SnapUp(height, dpi.DpiScaleY));
     }
 
-    /// <summary>一位数字的滚轮：0-9 竖排在 Canvas 上，靠平移露出目标数字。</summary>
+    /// <summary>向上取到整数个物理像素，再换回 DIP。</summary>
+    private static double SnapUp(double dipLength, double scale)
+    {
+        if (scale <= 0d)
+        {
+            return Math.Ceiling(dipLength);
+        }
+
+        return Math.Ceiling(dipLength * scale) / scale;
+    }
+
+    /// <summary>
+    /// 一位数字的滚轮：0-9 竖排在 Canvas 上，靠平移露出目标数字。
+    ///
+    /// 竖条铺了两遍 0-9，这样可以走「环形最短路径」：9→0 只往上滚一格（进位），
+    /// 0→9 只往下滚一格（借位），而不是横穿九格倒回去。
+    /// 越过第一遍之后再无动画折回等价位置，看不出接缝。
+    /// </summary>
     private sealed class DigitRoller : Grid
     {
         private static readonly Duration RollDuration = new(TimeSpan.FromMilliseconds(320));
 
+        /// <summary>0-9 铺两遍。</summary>
+        private const int Laps = 2;
+
         private readonly TranslateTransform _offset = new();
         private readonly double _cellHeight;
-        private int _current;
+
+        /// <summary>当前停在第几格（0..19），显示的数字是它模 10。</summary>
+        private int _index;
+
+        /// <summary>动画的批次号，用来判断折回时是否已被新的滚动接管。</summary>
+        private int _sequence;
 
         internal DigitRoller(char digit, double cellWidth, double cellHeight)
         {
-            _current = digit - '0';
+            _index = digit - '0';
             _cellHeight = cellHeight;
 
             // Canvas 绝对定位，不受测量/排列影响，格间距就是 cellHeight
             var strip = new Canvas { RenderTransform = _offset };
-            for (var n = 0; n <= 9; n++)
+            for (var n = 0; n < 10 * Laps; n++)
             {
-                var cell = new TextBlock
+                // 格高向上取整过，比字形略高一点，所以套一层让数字在格内居中，
+                // 否则每个数字都会贴着格子上沿，整排看着偏上
+                var cell = new Border
                 {
-                    Text = n.ToString(),
                     Width = cellWidth,
-                    TextAlignment = TextAlignment.Center
+                    Height = cellHeight,
+                    Child = new TextBlock
+                    {
+                        Text = (n % 10).ToString(),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
                 };
 
                 Canvas.SetLeft(cell, 0d);
@@ -200,29 +244,58 @@ public sealed class RollingNumberText : UserControl
             Height = cellHeight;   // 只露出一位，其余靠下面的裁剪藏起来
             ClipToBounds = true;
             SnapsToDevicePixels = true;
-            _offset.Y = -_current * cellHeight;
+            _offset.Y = -_index * cellHeight;
         }
 
         /// <summary>滚到目标数字；返回是否真的动了，用来决定后一位要不要错开。</summary>
         internal bool RollTo(char digit, TimeSpan delay)
         {
             var target = digit - '0';
-            if (target == _current)
+            var current = _index % 10;
+            if (target == current)
             {
                 return false;
             }
 
-            _current = target;
+            // 环形距离：往上和往下哪边近走哪边，相等时优先往上（数值增加的直觉）
+            var up = (target - current + 10) % 10;
+            var down = (current - target + 10) % 10;
+            _index = up <= down ? _index + up : _index - down;
+
+            var batch = ++_sequence;
 
             // 不指定 From，动画从当前位置接着走，连续变化时不会跳
-            var roll = new DoubleAnimation(-target * _cellHeight, RollDuration)
+            var roll = new DoubleAnimation(-_index * _cellHeight, RollDuration)
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
                 BeginTime = delay
             };
 
+            roll.Completed += (_, _) =>
+            {
+                // 期间又滚过就交给后来的那次去折回，避免打断它
+                if (batch == _sequence)
+                {
+                    FoldBack();
+                }
+            };
+
             _offset.BeginAnimation(TranslateTransform.YProperty, roll);
             return true;
+        }
+
+        /// <summary>把索引折回第一遍 0-9。位置等价，所以看不出跳变。</summary>
+        private void FoldBack()
+        {
+            var folded = ((_index % 10) + 10) % 10;
+            if (folded == _index)
+            {
+                return;
+            }
+
+            _index = folded;
+            _offset.BeginAnimation(TranslateTransform.YProperty, null);
+            _offset.Y = -_index * _cellHeight;
         }
     }
 }

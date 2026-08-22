@@ -291,13 +291,13 @@ public partial class MainWindow : GlassWindow
             if (snapshot?.Windows is null or { Count: 0 })
             {
                 BackOff();
-                SetStatus($"找不到本地代理 · {(int)_retryInterval.TotalSeconds}s 后重试", Theme.Critical);
+                SetStatus($"找不到本地代理 · {(int)_retryInterval.TotalSeconds}s 后重试", string.Empty, Theme.Critical);
                 return;
             }
 
             _retryInterval = _refreshInterval;
             Merge(snapshot.Windows);
-            SetStatus(DescribeState(snapshot), StateBrush(snapshot));
+            SetStatus(NoticeFor(snapshot), $"{DateTime.Now:HH:mm:ss} 更新", StateBrush(snapshot));
             EvaluateAlert();
             UpdateTray();
         }
@@ -308,7 +308,7 @@ public partial class MainWindow : GlassWindow
         catch (Exception ex)
         {
             BackOff();
-            SetStatus($"读取失败：{ex.GetType().Name} · {(int)_retryInterval.TotalSeconds}s 后重试", Theme.Critical);
+            SetStatus($"读取失败：{ex.GetType().Name} · {(int)_retryInterval.TotalSeconds}s 后重试", string.Empty, Theme.Critical);
         }
         finally
         {
@@ -352,21 +352,14 @@ public partial class MainWindow : GlassWindow
         }
     }
 
-    private static string DescribeState(LimitsDto snapshot)
+    /// <summary>需要盖掉时间去提示的特殊状态；一切正常时为 null。</summary>
+    private static string? NoticeFor(LimitsDto snapshot) => snapshot switch
     {
-        var stamp = $"{DateTime.Now:HH:mm:ss} 更新";
-        if (snapshot.Suspended)
-        {
-            return $"账号已暂停 · {stamp}";
-        }
-
-        if (snapshot.Unmetered)
-        {
-            return $"不计量账号 · {stamp}";
-        }
-
-        return snapshot.Degraded ? $"服务降级中 · {stamp}" : stamp;
-    }
+        { Suspended: true } => "账号已暂停",
+        { Unmetered: true } => "不计量账号",
+        { Degraded: true } => "服务降级中",
+        _ => null
+    };
 
     private static Brush StateBrush(LimitsDto snapshot) => snapshot switch
     {
@@ -375,9 +368,20 @@ public partial class MainWindow : GlassWindow
         _ => Theme.Accent
     };
 
-    private void SetStatus(string text, Brush dot)
+    /// <summary>
+    /// 标题栏那一小块只放得下一样东西：没有特殊状态就滚动显示刷新时间，
+    /// 有状态或出错则让文字顶上去——那时用户关心的是状态，不是刷新了几秒。
+    /// </summary>
+    private void SetStatus(string? notice, string clock, Brush dot)
     {
-        StatusText.Text = text;
+        var showNotice = !string.IsNullOrEmpty(notice);
+
+        StatusText.Text = notice ?? string.Empty;
+        StatusText.Visibility = showNotice ? Visibility.Visible : Visibility.Collapsed;
+
+        StatusClock.Text = showNotice ? string.Empty : clock;
+        StatusClock.Visibility = showNotice ? Visibility.Collapsed : Visibility.Visible;
+
         StatusDot.Fill = dot;
     }
 
