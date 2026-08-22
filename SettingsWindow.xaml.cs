@@ -85,7 +85,7 @@ public partial class SettingsWindow : GlassWindow
         ScaleValue.Text = $"{_settings.Scale * 100d:0}%";
         WidthValue.Text = $"{_settings.ContentWidth:0} px";
         GlassValue.Text = $"{_settings.GlassOpacity * 100d / 128d:0}%";
-        RefreshValue.Text = _settings.RefreshSeconds == 1 ? "1 秒" : $"{_settings.RefreshSeconds} 秒";
+        RefreshValue.Text = $"{_settings.RefreshSeconds:0.#} 秒";
     }
 
     private void BuildAccentDots()
@@ -174,7 +174,7 @@ public partial class SettingsWindow : GlassWindow
             return;
         }
 
-        _settings.RefreshSeconds = (int)e.NewValue;
+        _settings.RefreshSeconds = e.NewValue;
         Commit();
     }
 

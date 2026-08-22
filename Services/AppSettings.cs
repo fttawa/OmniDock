@@ -8,6 +8,9 @@ namespace OmniDock.Services;
 /// <summary>用户可调的外观与行为设置，存在 %LOCALAPPDATA%\OmniDock\settings.json。</summary>
 internal sealed class AppSettings
 {
+    /// <summary>最快的刷新间隔。再快也没意义：单次请求本身通常就要 0.3~0.8 秒。</summary>
+    internal const double MinRefreshSeconds = 0.5d;
+
     /// <summary>界面整体缩放。</summary>
     public double Scale { get; set; } = 1.0d;
 
@@ -20,8 +23,8 @@ internal sealed class AppSettings
     /// <summary>强调色，用于状态灯和水位正常时的用量条。</summary>
     public string AccentColor { get; set; } = AccentPresets[0];
 
-    /// <summary>自动刷新间隔（秒）。</summary>
-    public int RefreshSeconds { get; set; } = 1;
+    /// <summary>自动刷新间隔（秒），可以是 0.5 这样的小数。</summary>
+    public double RefreshSeconds { get; set; } = 1d;
 
     /// <summary>是否置顶。</summary>
     public bool AlwaysOnTop { get; set; } = true;
@@ -58,7 +61,7 @@ internal sealed class AppSettings
         Scale = Math.Clamp(Scale, 0.8d, 1.6d);
         ContentWidth = Math.Clamp(ContentWidth, 240d, 440d);
         GlassOpacity = Math.Clamp(GlassOpacity, 0x04, 0x80);
-        RefreshSeconds = Math.Clamp(RefreshSeconds, 1, 60);
+        RefreshSeconds = Math.Clamp(RefreshSeconds, MinRefreshSeconds, 60d);
         if (string.IsNullOrWhiteSpace(AccentColor))
         {
             AccentColor = AccentPresets[0];

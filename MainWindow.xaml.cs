@@ -43,8 +43,9 @@ public partial class MainWindow : GlassWindow
         InitializeComponent();
         WindowsList.ItemsSource = _windows;
 
-        // 一个 1 秒心跳管两件事：推进倒计时、按当前间隔拉数据
-        _heartbeat = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        // 心跳管两件事：推进倒计时、按当前间隔拉数据。
+        // 它的周期决定了刷新间隔的上限，所以要比最快的间隔更细（250ms 正好整除 0.5 秒）。
+        _heartbeat = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _heartbeat.Tick += async (_, _) => await OnHeartbeatAsync();
 
         // 拖动过程中会连续触发位置变化，攒一下再写盘

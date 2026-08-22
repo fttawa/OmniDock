@@ -73,9 +73,9 @@
             </Grid>
             <Slider x:Name="RefreshSlider"
                     Style="{StaticResource SettingSliderStyle}"
-                    Minimum="1" Maximum="60"
-                    SmallChange="1" LargeChange="5"
-                    TickFrequency="1" IsSnapToTickEnabled="True"
+                    Minimum="0.5" Maximum="60"
+                    SmallChange="0.5" LargeChange="5"
+                    TickFrequency="0.5" IsSnapToTickEnabled="True"
                     Margin="0,4,0,0"
                     ValueChanged="OnRefreshChanged" />
 
