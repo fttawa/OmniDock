@@ -52,11 +52,32 @@ public partial class SettingsWindow : GlassWindow
         WidthSlider.Value = _settings.ContentWidth;
         GlassSlider.Value = _settings.GlassOpacity;
         RefreshSlider.Value = _settings.RefreshSeconds;
+
         TopmostToggle.IsChecked = _settings.AlwaysOnTop;
-        TopmostToggle.Background = Theme.Accent;
+        AlertsToggle.IsChecked = _settings.EnableAlerts;
+        TrayToggle.IsChecked = _settings.ShowTrayIcon;
+        CloseToTrayToggle.IsChecked = _settings.CloseToTray;
+
+        // 自启的真实状态在注册表里，不在配置里
+        AutoStartToggle.IsChecked = AutoStart.IsEnabled();
+
+        foreach (var toggle in new[] { TopmostToggle, AlertsToggle, AutoStartToggle, TrayToggle, CloseToTrayToggle })
+        {
+            toggle.Background = Theme.Accent;
+        }
 
         UpdateLabels();
         SyncAccentSelection();
+        SyncTrayDependency();
+    }
+
+    /// <summary>没有托盘图标时「关闭时收进托盘」不能开，否则窗口关了就找不回来。</summary>
+    private void SyncTrayDependency()
+    {
+        var available = _settings.ShowTrayIcon;
+        CloseToTrayToggle.IsEnabled = available;
+        CloseToTrayLabel.Opacity = available ? 1d : 0.4d;
+        CloseToTrayToggle.Opacity = available ? 1d : 0.4d;
     }
 
     private void UpdateLabels()
@@ -168,6 +189,67 @@ public partial class SettingsWindow : GlassWindow
         Commit();
     }
 
+    private void OnAlertsChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.EnableAlerts = AlertsToggle.IsChecked == true;
+        Commit();
+    }
+
+    private void OnAutoStartChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        // 写注册表可能失败，用实际结果回填开关
+        var applied = AutoStart.Set(AutoStartToggle.IsChecked == true);
+        if (applied != (AutoStartToggle.IsChecked == true))
+        {
+            _loading = true;
+            AutoStartToggle.IsChecked = applied;
+            _loading = false;
+        }
+    }
+
+    private void OnTrayChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.ShowTrayIcon = TrayToggle.IsChecked == true;
+
+        // 关掉托盘图标时顺手关掉依赖它的选项
+        if (!_settings.ShowTrayIcon && _settings.CloseToTray)
+        {
+            _settings.CloseToTray = false;
+            _loading = true;
+            CloseToTrayToggle.IsChecked = false;
+            _loading = false;
+        }
+
+        SyncTrayDependency();
+        Commit();
+    }
+
+    private void OnCloseToTrayChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.CloseToTray = CloseToTrayToggle.IsChecked == true;
+        Commit();
+    }
+
     private void OnResetClick(object sender, RoutedEventArgs e)
     {
         var defaults = new AppSettings();
@@ -177,6 +259,9 @@ public partial class SettingsWindow : GlassWindow
         _settings.AccentColor = defaults.AccentColor;
         _settings.RefreshSeconds = defaults.RefreshSeconds;
         _settings.AlwaysOnTop = defaults.AlwaysOnTop;
+        _settings.EnableAlerts = defaults.EnableAlerts;
+        _settings.ShowTrayIcon = defaults.ShowTrayIcon;
+        _settings.CloseToTray = defaults.CloseToTray;
 
         Theme.SetAccent(_settings.AccentColor);
         _loading = true;

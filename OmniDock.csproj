@@ -4,13 +4,26 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- 托盘图标用 WinForms 的 NotifyIcon，和 WPF 共存没问题 -->
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>OmniDock</AssemblyName>
     <RootNamespace>OmniDock</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WFO0003 是 WinForms 分析器建议改用 ApplicationHighDpiMode。
+         这里的 manifest DPI 设置是给 WPF 主界面用的，删了会导致高 DPI 下模糊。 -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
     <!-- 悬浮窗不需要控制台窗口，也不生成多余的引用程序集 -->
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 开了 WinForms 之后隐式 using 会把 System.Windows.Forms / System.Drawing 也带进来，
+         和 WPF 的 Brush、Application、UserControl、KeyEventArgs 全部撞名。
+         这个项目以 WPF 为主，WinForms 只有托盘图标在用，那里写显式 using 就行。 -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
 </Project>

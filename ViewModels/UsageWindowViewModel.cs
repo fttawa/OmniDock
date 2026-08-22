@@ -5,16 +5,24 @@ using OmniDock.Services;
 
 namespace OmniDock.ViewModels;
 
-/// <summary>界面上的一条额度窗口：占比条 + 已用/限额 + 重置倒计时。</summary>
+/// <summary>界面上的一条额度窗口：占比条 + 已用/限额 + 重置倒计时 + 速率预测。</summary>
 internal sealed class UsageWindowViewModel : INotifyPropertyChanged
 {
+    private static readonly Brush Muted = Theme.Freeze("#8AFFFFFF");
+
+    private readonly UsageForecast _forecast = new();
+
     private string _title = string.Empty;
     private string _usedText = string.Empty;
     private string _budgetText = string.Empty;
     private string _percentText = string.Empty;
     private string _resetText = string.Empty;
+    private string _forecastText = string.Empty;
     private double _percent;
+    private double _budget;
+    private bool _willRunOut;
     private Brush _barBrush = Theme.Accent;
+    private Brush _forecastBrush = Theme.Accent;
     private DateTimeOffset _resetAt;
 
     internal UsageWindowViewModel(UsageWindowDto dto) => Update(dto);
@@ -66,10 +74,40 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         private set => Set(ref _barBrush, value);
     }
 
+    /// <summary>消耗速率与耗尽预测，例如「≈ 1,240/分 · 约 8 分钟后用尽」。</summary>
+    public string ForecastText
+    {
+        get => _forecastText;
+        private set => Set(ref _forecastText, value);
+    }
+
+    public Brush ForecastBrush
+    {
+        get => _forecastBrush;
+        private set => Set(ref _forecastBrush, value);
+    }
+
+    /// <summary>按当前速率会在重置之前用光。</summary>
+    internal bool WillRunOut
+    {
+        get => _willRunOut;
+        private set => _willRunOut = value;
+    }
+
+    /// <summary>水位过高或即将撞墙，值得提醒一下。</summary>
+    internal bool NeedsAttention => WillRunOut || Percent >= 85d;
+
     internal void Update(UsageWindowDto dto)
     {
+        if (Name != dto.Name)
+        {
+            _forecast.Reset(); // 换了窗口，之前的速率无关了
+        }
+
         Name = dto.Name;
         Title = TitleOf(dto.Name);
+        _budget = dto.Budget;
+        _forecast.Add(dto.Used, dto.Budget, DateTimeOffset.Now);
 
         var percent = dto.Budget > 0 ? dto.Used / dto.Budget * 100d : 0d;
         Percent = Math.Clamp(percent, 0d, 100d);
@@ -86,6 +124,8 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     /// <summary>每秒调用一次，让倒计时自己走，不用重新请求。</summary>
     internal void RefreshCountdown()
     {
+        RefreshForecast();
+
         // 低位补零，位数保持不变，数字才能一直滚而不是跳变
         var left = _resetAt - DateTimeOffset.Now;
         ResetText = left <= TimeSpan.Zero
@@ -101,6 +141,60 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
 
     /// <summary>换了强调色之后重算配色，不必等下一次请求。</summary>
     internal void RefreshAccent() => BarBrush = BrushFor(Percent);
+
+    /// <summary>
+    /// 拿消耗速率和重置倒计时一比：会在重置之前用光才算有风险。
+    /// 每秒重算一次，因为倒计时在走，同一个速率的结论会随时间改变。
+    /// </summary>
+    private void RefreshForecast()
+    {
+        var rate = _forecast.RatePerMinute;
+        if (rate is null)
+        {
+            WillRunOut = false;
+            ForecastText = "速率估算中";
+            ForecastBrush = Muted;
+            return;
+        }
+
+        if (rate.Value <= 0d)
+        {
+            WillRunOut = false;
+            ForecastText = "当前没有消耗";
+            ForecastBrush = Muted;
+            return;
+        }
+
+        var rateText = $"≈ {rate.Value:N0}/分";
+        if (_forecast.ExhaustIn is not { } exhaust)
+        {
+            WillRunOut = false;
+            ForecastText = rateText;
+            ForecastBrush = Muted;
+            return;
+        }
+
+        var untilReset = _resetAt - DateTimeOffset.Now;
+        if (exhaust < untilReset)
+        {
+            WillRunOut = true;
+            ForecastText = $"{rateText} · 约 {Humanize(exhaust)}后用尽";
+            ForecastBrush = Theme.Critical;
+            return;
+        }
+
+        WillRunOut = false;
+        ForecastText = $"{rateText} · 重置前用不完";
+        ForecastBrush = Muted;
+    }
+
+    private static string Humanize(TimeSpan span) => span switch
+    {
+        { TotalDays: >= 1d } => $"{(int)span.TotalDays} 天 {span.Hours} 小时",
+        { TotalHours: >= 1d } => $"{(int)span.TotalHours} 小时 {span.Minutes} 分",
+        { TotalMinutes: >= 1d } => $"{(int)span.TotalMinutes} 分钟",
+        _ => "不到 1 分钟"
+    };
 
     /// <summary>水位高时用固定的警示色，正常时才跟着强调色走。</summary>
     private static Brush BrushFor(double percent) => percent switch

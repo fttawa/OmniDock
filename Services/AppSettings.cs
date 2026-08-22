@@ -26,6 +26,15 @@ internal sealed class AppSettings
     /// <summary>是否置顶。</summary>
     public bool AlwaysOnTop { get; set; } = true;
 
+    /// <summary>水位过高或预计撞墙时闪一下提醒。</summary>
+    public bool EnableAlerts { get; set; } = true;
+
+    /// <summary>显示托盘图标。</summary>
+    public bool ShowTrayIcon { get; set; } = true;
+
+    /// <summary>点关闭时收进托盘而不是退出（需要托盘图标开着）。</summary>
+    public bool CloseToTray { get; set; }
+
     /// <summary>上次关闭时的窗口位置；为空表示还没记过，用默认的右上角。</summary>
     public double? WindowLeft { get; set; }
 

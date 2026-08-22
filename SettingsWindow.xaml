@@ -88,7 +88,7 @@
                             Margin="0,-3,-3,-3" />
             </Grid>
 
-            <!-- 窗口置顶 -->
+            <!-- 开关组 -->
             <Grid Margin="0,12,0,0">
                 <TextBlock Text="窗口置顶" Style="{StaticResource SettingLabelStyle}" />
                 <CheckBox x:Name="TopmostToggle"
@@ -96,6 +96,45 @@
                           HorizontalAlignment="Right"
                           Checked="OnTopmostChanged"
                           Unchecked="OnTopmostChanged" />
+            </Grid>
+
+            <Grid Margin="0,9,0,0">
+                <TextBlock Text="额度告警" Style="{StaticResource SettingLabelStyle}"
+                           ToolTip="水位超过 85% 或预计在重置前用光时闪一下" />
+                <CheckBox x:Name="AlertsToggle"
+                          Style="{StaticResource ToggleSwitchStyle}"
+                          HorizontalAlignment="Right"
+                          Checked="OnAlertsChanged"
+                          Unchecked="OnAlertsChanged" />
+            </Grid>
+
+            <Grid Margin="0,9,0,0">
+                <TextBlock Text="开机自启" Style="{StaticResource SettingLabelStyle}" />
+                <CheckBox x:Name="AutoStartToggle"
+                          Style="{StaticResource ToggleSwitchStyle}"
+                          HorizontalAlignment="Right"
+                          Checked="OnAutoStartChanged"
+                          Unchecked="OnAutoStartChanged" />
+            </Grid>
+
+            <Grid Margin="0,9,0,0">
+                <TextBlock Text="托盘图标" Style="{StaticResource SettingLabelStyle}" />
+                <CheckBox x:Name="TrayToggle"
+                          Style="{StaticResource ToggleSwitchStyle}"
+                          HorizontalAlignment="Right"
+                          Checked="OnTrayChanged"
+                          Unchecked="OnTrayChanged" />
+            </Grid>
+
+            <Grid Margin="0,9,0,0">
+                <TextBlock x:Name="CloseToTrayLabel"
+                           Text="关闭时收进托盘"
+                           Style="{StaticResource SettingLabelStyle}" />
+                <CheckBox x:Name="CloseToTrayToggle"
+                          Style="{StaticResource ToggleSwitchStyle}"
+                          HorizontalAlignment="Right"
+                          Checked="OnCloseToTrayChanged"
+                          Unchecked="OnCloseToTrayChanged" />
             </Grid>
 
             <!-- 恢复默认 -->

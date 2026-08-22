@@ -21,8 +21,11 @@ public partial class MainWindow : GlassWindow
     private readonly AppSettings _settings = SettingsStore.Load();
 
     private readonly DispatcherTimer _positionSave;
+    private readonly TrayIcon _tray = new();
 
     private SettingsWindow? _settingsWindow;
+    private bool _alerting;
+    private bool _exiting;
     private TimeSpan _refreshInterval;
     private TimeSpan _retryInterval;
     private DateTime _lastAttemptUtc = DateTime.MinValue;
@@ -51,6 +54,31 @@ public partial class MainWindow : GlassWindow
             _positionSave.Stop();
             SettingsStore.Save(_settings);
         };
+
+        _tray.ToggleRequested += ToggleVisibility;
+        _tray.SettingsRequested += () => OnSettingsClick(this, new RoutedEventArgs());
+        _tray.ExitRequested += ExitApplication;
+        _tray.AutoStartChanged += _ => { }; // 托盘里改自启只影响注册表，无需落盘设置
+        _tray.SyncAutoStart(AutoStart.IsEnabled());
+    }
+
+    /// <summary>托盘点一下：藏起来的显示出来，显示中的藏起来。</summary>
+    private void ToggleVisibility()
+    {
+        if (IsVisible)
+        {
+            Hide();
+            return;
+        }
+
+        Show();
+        Activate();
+    }
+
+    private void ExitApplication()
+    {
+        _exiting = true;
+        Close();
     }
 
     protected override async void OnSourceInitialized(EventArgs e)
@@ -120,8 +148,25 @@ public partial class MainWindow : GlassWindow
         }
     }
 
+    /// <summary>
+    /// 开了「关闭到托盘」就只是藏起来。必须同时有托盘图标，
+    /// 否则窗口藏了又没入口，等于把自己锁在外面。
+    /// </summary>
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (!_exiting && _settings.CloseToTray && _settings.ShowTrayIcon)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+
+        base.OnClosing(e);
+    }
+
     protected override void OnClosed(EventArgs e)
     {
+        _tray.Dispose();
         _heartbeat.Stop();
         _positionSave.Stop();
         _shutdown.Cancel();
@@ -170,6 +215,47 @@ public partial class MainWindow : GlassWindow
         {
             window.RefreshAccent();
         }
+
+        _tray.Visible = _settings.ShowTrayIcon;
+    }
+
+    /// <summary>
+    /// 水位过高或预计撞墙时闪一下边框和状态灯。
+    /// 只在「刚进入」这个状态时闪，否则每秒都会抖。
+    /// </summary>
+    private void EvaluateAlert()
+    {
+        var shouldAlert = _windows.Any(window => window.NeedsAttention);
+
+        if (shouldAlert && !_alerting && _settings.EnableAlerts)
+        {
+            PulseAttention();
+        }
+
+        _alerting = shouldAlert;
+    }
+
+    private void PulseAttention()
+    {
+        var warn = ((SolidColorBrush)Theme.Critical).Color;
+
+        RootBorderBrush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation
+        {
+            To = warn,
+            Duration = new Duration(TimeSpan.FromMilliseconds(420)),
+            AutoReverse = true,
+            RepeatBehavior = new RepeatBehavior(3d),
+            EasingFunction = new SineEase()
+        });
+
+        StatusDot.BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            To = 0.2d,
+            Duration = new Duration(TimeSpan.FromMilliseconds(420)),
+            AutoReverse = true,
+            RepeatBehavior = new RepeatBehavior(3d),
+            EasingFunction = new SineEase()
+        });
     }
 
     private async Task OnHeartbeatAsync()
@@ -179,6 +265,9 @@ public partial class MainWindow : GlassWindow
         {
             window.RefreshCountdown();
         }
+
+        // 倒计时在走，同一个速率的撞墙结论会随时间翻转，所以每拍都要判一次
+        EvaluateAlert();
 
         if (DateTime.UtcNow - _lastAttemptUtc >= _retryInterval)
         {
@@ -209,6 +298,8 @@ public partial class MainWindow : GlassWindow
             _retryInterval = _refreshInterval;
             Merge(snapshot.Windows);
             SetStatus(DescribeState(snapshot), StateBrush(snapshot));
+            EvaluateAlert();
+            UpdateTray();
         }
         catch (OperationCanceledException)
         {
@@ -288,6 +379,22 @@ public partial class MainWindow : GlassWindow
     {
         StatusText.Text = text;
         StatusDot.Fill = dot;
+    }
+
+    /// <summary>托盘图标跟着水位最高的那个窗口走。</summary>
+    private void UpdateTray()
+    {
+        if (!_settings.ShowTrayIcon || _windows.Count == 0)
+        {
+            return;
+        }
+
+        var hottest = _windows.MaxBy(window => window.Percent)!;
+        var tooltip = string.Join(
+            Environment.NewLine,
+            _windows.Select(window => $"{window.Title} {window.PercentText}  {window.UsedText} {window.BudgetText}"));
+
+        _tray.Update(hottest.Percent, tooltip, ((SolidColorBrush)hottest.BarBrush).Color);
     }
 
     /// <summary>放到主屏工作区右上角，留出一点边距。</summary>

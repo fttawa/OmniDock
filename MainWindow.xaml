@@ -16,11 +16,14 @@
             Width="296"
             Opacity="0"
             CornerRadius="8"
-            BorderThickness="1"
-            BorderBrush="#26FFFFFF">
+            BorderThickness="1">
         <Border.LayoutTransform>
             <ScaleTransform x:Name="RootScale" ScaleX="1" ScaleY="1" />
         </Border.LayoutTransform>
+        <!-- 写成元素形式才是可动画的画刷，告警脉冲要改它的 Color -->
+        <Border.BorderBrush>
+            <SolidColorBrush x:Name="RootBorderBrush" Color="#26FFFFFF" />
+        </Border.BorderBrush>
         <Border.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="0.4,1">
                 <GradientStop Offset="0" Color="#0EFFFFFF" />
@@ -118,6 +121,13 @@
                                          controls:SmoothProgress.Target="{Binding Percent, Mode=OneWay}"
                                          Foreground="{Binding BarBrush}"
                                          Margin="0,6,0,0" />
+
+                            <!-- 消耗速率与耗尽预测。文字结构一直在变，用普通 TextBlock
+                                 而不是滚动数字，免得每秒整排重建 -->
+                            <TextBlock Text="{Binding ForecastText}"
+                                       Foreground="{Binding ForecastBrush}"
+                                       FontSize="10"
+                                       Margin="0,5,0,0" />
                         </StackPanel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
