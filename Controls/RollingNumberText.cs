@@ -193,7 +193,11 @@ public sealed class RollingNumberText : UserControl
     ///
     /// 竖条铺了两遍 0-9，这样可以走「环形最短路径」：9→0 只往上滚一格（进位），
     /// 0→9 只往下滚一格（借位），而不是横穿九格倒回去。
-    /// 越过第一遍之后再无动画折回等价位置，看不出接缝。
+    ///
+    /// 关键是每次滚完都把索引归位到竖条中间那一段（5..14）：环形最短路径单次
+    /// 最多走 5 格，中间段上下各留 5 格余量，滚动就永远不会跑到没有格子的地方。
+    /// 少了这个归位，0→9 会先滚进一格空白，等动画结束才瞬移到 9——看起来就是
+    /// 数字闪一下。
     /// </summary>
     private sealed class DigitRoller : Grid
     {
@@ -201,6 +205,8 @@ public sealed class RollingNumberText : UserControl
 
         /// <summary>0-9 铺两遍。</summary>
         private const int Laps = 2;
+
+        private const int MaxIndex = 10 * Laps - 1;
 
         private readonly TranslateTransform _offset = new();
         private readonly double _cellHeight;
@@ -213,7 +219,7 @@ public sealed class RollingNumberText : UserControl
 
         internal DigitRoller(char digit, double cellWidth, double cellHeight)
         {
-            _index = digit - '0';
+            _index = Centered(digit - '0');
             _cellHeight = cellHeight;
 
             // Canvas 绝对定位，不受测量/排列影响，格间距就是 cellHeight
@@ -251,7 +257,7 @@ public sealed class RollingNumberText : UserControl
         internal bool RollTo(char digit, TimeSpan delay)
         {
             var target = digit - '0';
-            var current = _index % 10;
+            var current = DigitAt(_index);
             if (target == current)
             {
                 return false;
@@ -260,8 +266,17 @@ public sealed class RollingNumberText : UserControl
             // 环形距离：往上和往下哪边近走哪边，相等时优先往上（数值增加的直觉）
             var up = (target - current + 10) % 10;
             var down = (current - target + 10) % 10;
-            _index = up <= down ? _index + up : _index - down;
+            var goingUp = up <= down;
+            var next = goingUp ? _index + up : _index - down;
 
+            // 连续滚动可能让索引漂到边缘，这一步会滚出竖条就先无声归位
+            if (next < 0 || next > MaxIndex)
+            {
+                Recenter();
+                next = goingUp ? _index + up : _index - down;
+            }
+
+            _index = next;
             var batch = ++_sequence;
 
             // 不指定 From，动画从当前位置接着走，连续变化时不会跳
@@ -273,10 +288,10 @@ public sealed class RollingNumberText : UserControl
 
             roll.Completed += (_, _) =>
             {
-                // 期间又滚过就交给后来的那次去折回，避免打断它
+                // 期间又滚过就交给后来的那次去归位，避免打断它
                 if (batch == _sequence)
                 {
-                    FoldBack();
+                    Recenter();
                 }
             };
 
@@ -284,18 +299,23 @@ public sealed class RollingNumberText : UserControl
             return true;
         }
 
-        /// <summary>把索引折回第一遍 0-9。位置等价，所以看不出跳变。</summary>
-        private void FoldBack()
+        /// <summary>归位到中间段，为下一次上下滚动各留出余量。位置等价，看不出跳变。</summary>
+        private void Recenter()
         {
-            var folded = ((_index % 10) + 10) % 10;
-            if (folded == _index)
+            var target = Centered(DigitAt(_index));
+            if (target == _index)
             {
                 return;
             }
 
-            _index = folded;
+            _index = target;
             _offset.BeginAnimation(TranslateTransform.YProperty, null);
             _offset.Y = -_index * _cellHeight;
         }
+
+        private static int DigitAt(int index) => ((index % 10) + 10) % 10;
+
+        /// <summary>把数字映射到竖条中间段 5..14，上下都还剩 5 格可走。</summary>
+        private static int Centered(int digit) => digit >= 5 ? digit : digit + 10;
     }
 }
