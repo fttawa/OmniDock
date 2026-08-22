@@ -10,8 +10,6 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
 {
     private static readonly Brush Muted = Theme.Freeze("#8AFFFFFF");
 
-    private readonly UsageForecast _forecast = new();
-
     private string _title = string.Empty;
     private string _usedText = string.Empty;
     private string _budgetText = string.Empty;
@@ -19,6 +17,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     private string _resetText = string.Empty;
     private string _forecastText = string.Empty;
     private double _percent;
+    private double _used;
     private double _budget;
     private bool _willRunOut;
     private Brush _barBrush = Theme.Accent;
@@ -99,15 +98,10 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
 
     internal void Update(UsageWindowDto dto)
     {
-        if (Name != dto.Name)
-        {
-            _forecast.Reset(); // 换了窗口，之前的速率无关了
-        }
-
         Name = dto.Name;
         Title = TitleOf(dto.Name);
+        _used = dto.Used;
         _budget = dto.Budget;
-        _forecast.Add(dto.Used, dto.Budget, DateTimeOffset.Now);
 
         var percent = dto.Budget > 0 ? dto.Used / dto.Budget * 100d : 0d;
         Percent = Math.Clamp(percent, 0d, 100d);
@@ -143,30 +137,31 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     internal void RefreshAccent() => BarBrush = BrushFor(Percent);
 
     /// <summary>
-    /// 拿消耗速率和重置倒计时一比：会在重置之前用光才算有风险。
+    /// 拿窗口内的平均速率和重置倒计时一比：会在重置之前用光才算有风险。
     /// 每秒重算一次，因为倒计时在走，同一个速率的结论会随时间改变。
     /// </summary>
     private void RefreshForecast()
     {
-        var rate = _forecast.RatePerMinute;
-        if (rate is null)
+        var now = DateTimeOffset.Now;
+        if (UsageForecast.Estimate(Name, _used, _budget, _resetAt, now) is not { } estimate)
         {
+            // 窗口刚开始，或者窗口名不认识
             WillRunOut = false;
-            ForecastText = "速率估算中";
+            ForecastText = "窗口刚开始";
             ForecastBrush = Muted;
             return;
         }
 
-        if (rate.Value <= 0d)
+        if (estimate.PerMinute <= 0d)
         {
             WillRunOut = false;
-            ForecastText = "当前没有消耗";
+            ForecastText = "本窗口暂无消耗";
             ForecastBrush = Muted;
             return;
         }
 
-        var rateText = $"≈ {rate.Value:N0}/分";
-        if (_forecast.ExhaustIn is not { } exhaust)
+        var rateText = $"均 {estimate.PerMinute:N0}/分";
+        if (estimate.ExhaustIn is not { } exhaust)
         {
             WillRunOut = false;
             ForecastText = rateText;
@@ -174,8 +169,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        var untilReset = _resetAt - DateTimeOffset.Now;
-        if (exhaust < untilReset)
+        if (exhaust < _resetAt - now)
         {
             WillRunOut = true;
             ForecastText = $"{rateText} · 约 {Humanize(exhaust)}后用尽";

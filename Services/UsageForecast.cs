@@ -1,98 +1,79 @@
 namespace OmniDock.Services;
 
+/// <summary>窗口内的平均消耗速率，以及按这个速率还能撑多久。</summary>
+internal readonly record struct UsageRate(double PerMinute, TimeSpan? ExhaustIn);
+
 /// <summary>
-/// 按最近一段时间的采样估算消耗速率，并推算按这个速度多久会用光。
-/// 用量是阶梯式上涨的（只在真的消耗时才动），所以用最小二乘拟合斜率，
-/// 比首尾差分稳，不会因为首尾恰好落在平台期就得出 0。
+/// 直接用窗口内的平均值估算消耗速率：额度窗口自带时间跨度（5h、7d 就是窗口长度），
+/// 把重置时刻往前推一个窗口长度就是起点，已用量除以已经过去的时间就是平均速率。
+///
+/// 这样不必自己攒采样：程序一启动就有结果，也不用识别额度重置——
+/// 重置后 used 归零、剩余时间变回一整个窗口，算出来自然就是新窗口的均值。
 /// </summary>
-internal sealed class UsageForecast
+internal static class UsageForecast
 {
-    /// <summary>只看最近这段时间，太久以前的速度没有参考价值。</summary>
-    private static readonly TimeSpan Window = TimeSpan.FromMinutes(6);
+    /// <summary>窗口刚开始时样本太短，均值会被放得很夸张，先不给结论。</summary>
+    private static readonly TimeSpan MinElapsed = TimeSpan.FromMinutes(2);
 
-    /// <summary>至少要这么多点、跨过这么长时间才敢给结论。</summary>
-    private const int MinSamples = 4;
-    private static readonly TimeSpan MinSpan = TimeSpan.FromSeconds(45);
+    /// <summary>低于这个速率就当作没在消耗。</summary>
+    private const double IdleThreshold = 0.5d;
 
-    private readonly List<(DateTimeOffset At, double Used)> _samples = [];
-
-    /// <summary>每分钟消耗量；数据不够或没在消耗时为 null。</summary>
-    internal double? RatePerMinute { get; private set; }
-
-    /// <summary>按当前速率还有多久用光；估不出来就是 null。</summary>
-    internal TimeSpan? ExhaustIn { get; private set; }
-
-    internal void Add(double used, double budget, DateTimeOffset now)
+    internal static UsageRate? Estimate(
+        string windowName,
+        double used,
+        double budget,
+        DateTimeOffset resetAt,
+        DateTimeOffset now)
     {
-        // 额度重置会让 used 掉回去，之前的历史全部作废
-        if (_samples.Count > 0 && used < _samples[^1].Used - 0.001d)
+        if (ParseWindowLength(windowName) is not { } length || length <= TimeSpan.Zero)
         {
-            _samples.Clear();
+            return null;
         }
 
-        _samples.Add((now, used));
-        _samples.RemoveAll(sample => now - sample.At > Window);
+        // 窗口起点 = 重置时刻往前推一个窗口长度；已过去 = 窗口长度 - 剩余时间
+        var elapsed = length - (resetAt - now);
 
-        Recalculate(used, budget);
-    }
-
-    /// <summary>换了额度窗口或需要重新起算时清空。</summary>
-    internal void Reset()
-    {
-        _samples.Clear();
-        RatePerMinute = null;
-        ExhaustIn = null;
-    }
-
-    private void Recalculate(double used, double budget)
-    {
-        RatePerMinute = null;
-        ExhaustIn = null;
-
-        if (_samples.Count < MinSamples)
+        // reset_at 过期还没刷新时 elapsed 会超出窗口长度，夹回来
+        elapsed = TimeSpan.FromTicks(Math.Clamp(elapsed.Ticks, 0L, length.Ticks));
+        if (elapsed < MinElapsed)
         {
-            return;
+            return null;
         }
 
-        var origin = _samples[0].At;
-        var span = _samples[^1].At - origin;
-        if (span < MinSpan)
+        var rate = used / elapsed.TotalMinutes;
+        if (rate <= IdleThreshold)
         {
-            return;
+            return new UsageRate(0d, null);
         }
-
-        // 最小二乘拟合 used = a + b * 分钟数，b 就是速率
-        double sumX = 0d, sumY = 0d, sumXx = 0d, sumXy = 0d;
-        foreach (var (at, value) in _samples)
-        {
-            var x = (at - origin).TotalMinutes;
-            sumX += x;
-            sumY += value;
-            sumXx += x * x;
-            sumXy += x * value;
-        }
-
-        var n = _samples.Count;
-        var denominator = n * sumXx - sumX * sumX;
-        if (Math.Abs(denominator) < 1e-9d)
-        {
-            return;
-        }
-
-        var slope = (n * sumXy - sumX * sumY) / denominator;
-
-        // 负斜率只可能来自抖动，当作没在消耗
-        if (slope <= 0.5d)
-        {
-            RatePerMinute = 0d;
-            return;
-        }
-
-        RatePerMinute = slope;
 
         var remaining = budget - used;
-        ExhaustIn = remaining <= 0d
+        var exhaustIn = remaining <= 0d
             ? TimeSpan.Zero
-            : TimeSpan.FromMinutes(remaining / slope);
+            : TimeSpan.FromMinutes(remaining / rate);
+
+        return new UsageRate(rate, exhaustIn);
+    }
+
+    /// <summary>窗口名就是它的长度：5h、7d、30m、2w。</summary>
+    private static TimeSpan? ParseWindowLength(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length < 2)
+        {
+            return null;
+        }
+
+        if (!double.TryParse(name[..^1], out var amount) || amount <= 0d)
+        {
+            return null;
+        }
+
+        return char.ToLowerInvariant(name[^1]) switch
+        {
+            'm' => TimeSpan.FromMinutes(amount),
+            'h' => TimeSpan.FromHours(amount),
+            'd' => TimeSpan.FromDays(amount),
+            'w' => TimeSpan.FromDays(amount * 7d),
+            _ => null
+        };
     }
 }
