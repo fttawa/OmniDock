@@ -1,0 +1,236 @@
+<Application x:Class="OmniDock.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+
+        <!-- 标题栏图标按钮：默认淡底，悬停提亮 -->
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Foreground" Value="#CCFFFFFF" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="#14FFFFFF" CornerRadius="11">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#2EFFFFFF" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#0AFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 关闭按钮：悬停变红 -->
+        <Style x:Key="CloseButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="#14FFFFFF" CornerRadius="11">
+                            <Path Data="M 0,0 L 8,8 M 8,0 L 0,8"
+                                  Stroke="{TemplateBinding Foreground}"
+                                  StrokeThickness="1.2"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#E81123" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#C50F1F" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 用量条：轨道 + 按比例填充的指示条 -->
+        <Style x:Key="UsageBarStyle" TargetType="ProgressBar">
+            <Setter Property="Height" Value="5" />
+            <Setter Property="Minimum" Value="0" />
+            <Setter Property="Maximum" Value="100" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="#1FFFFFFF" CornerRadius="2.5" ClipToBounds="True">
+                            <Grid>
+                                <Border x:Name="PART_Track" />
+                                <Border x:Name="PART_Indicator"
+                                        HorizontalAlignment="Left"
+                                        CornerRadius="2.5"
+                                        Background="{TemplateBinding Foreground}" />
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 滑块两侧的响应区，做成透明的，点哪跳哪 -->
+        <Style x:Key="SliderSideStyle" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="Transparent" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SliderThumbStyle" TargetType="Thumb">
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid>
+                            <Ellipse x:Name="Dot" Fill="#F2FFFFFF" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Dot" Property="Fill" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingSliderStyle" TargetType="Slider">
+            <Setter Property="Height" Value="16" />
+            <Setter Property="IsMoveToPointEnabled" Value="True" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center">
+                            <Border Height="3"
+                                    CornerRadius="1.5"
+                                    Background="#1FFFFFFF"
+                                    VerticalAlignment="Center" />
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource SliderSideStyle}"
+                                                  Command="Slider.DecreaseLarge" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource SliderThumbStyle}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource SliderSideStyle}"
+                                                  Command="Slider.IncreaseLarge" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 开关：Background 传入选中时的颜色 -->
+        <Style x:Key="ToggleSwitchStyle" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Track"
+                                Width="32"
+                                Height="17"
+                                CornerRadius="8.5"
+                                Background="#1FFFFFFF">
+                            <Ellipse x:Name="Knob"
+                                     Width="13"
+                                     Height="13"
+                                     Fill="#B0FFFFFF"
+                                     HorizontalAlignment="Left"
+                                     Margin="2,0,0,0" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background"
+                                        Value="{Binding Background, RelativeSource={RelativeSource TemplatedParent}}" />
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="Knob" Property="Margin" Value="0,0,2,0" />
+                                <Setter TargetName="Knob" Property="Fill" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 强调色圆点：Background 传入色值，选中时描一圈同色环 -->
+        <Style x:Key="ColorDotStyle" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Margin" Value="0,0,3,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Grid Width="22" Height="22" Background="Transparent">
+                            <Ellipse x:Name="Ring"
+                                     Width="21"
+                                     Height="21"
+                                     StrokeThickness="1.4"
+                                     Stroke="Transparent" />
+                            <Ellipse Width="13"
+                                     Height="13"
+                                     Fill="{Binding Background, RelativeSource={RelativeSource TemplatedParent}}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <!-- hover 圈只在没选中时出现，否则会盖掉刚点中的那个选中圈
+                                 （同属性的触发器后写的优先，所以选中态必须放在最后） -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="IsChecked" Value="False" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Ring" Property="Stroke" Value="#40FFFFFF" />
+                            </MultiTrigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Ring" Property="Stroke"
+                                        Value="{Binding Background, RelativeSource={RelativeSource TemplatedParent}}" />
+                                <Setter TargetName="Ring" Property="StrokeThickness" Value="1.8" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 设置项标签 / 数值 -->
+        <Style x:Key="SettingLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E0FFFFFF" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="SettingValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#8AFFFFFF" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+    </Application.Resources>
+</Application>

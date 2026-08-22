@@ -1,0 +1,127 @@
+<local:GlassWindow x:Class="OmniDock.MainWindow"
+                   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="clr-namespace:OmniDock"
+                   xmlns:controls="clr-namespace:OmniDock.Controls"
+                   Title="OmniDock"
+                   Width="296"
+                   SizeToContent="Height"
+                   Topmost="True"
+                   TextOptions.TextFormattingMode="Ideal"
+                   KeyDown="OnWindowKeyDown">
+
+    <!-- 只做一层很淡的高光和描边：玻璃的模糊与着色都由 DWM 亚克力提供，
+         这层若太厚会把透进来的背景盖住。整体缩放靠 LayoutTransform。 -->
+    <Border x:Name="RootBorder"
+            Width="296"
+            Opacity="0"
+            CornerRadius="8"
+            BorderThickness="1"
+            BorderBrush="#26FFFFFF">
+        <Border.LayoutTransform>
+            <ScaleTransform x:Name="RootScale" ScaleX="1" ScaleY="1" />
+        </Border.LayoutTransform>
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0.4,1">
+                <GradientStop Offset="0" Color="#0EFFFFFF" />
+                <GradientStop Offset="1" Color="#02FFFFFF" />
+            </LinearGradientBrush>
+        </Border.Background>
+
+        <Grid Margin="13,10,11,11">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏：状态灯 + 标题，右侧是时间戳和按钮 -->
+            <Grid Grid.Row="0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="#FF6CD3A6" Margin="0,0,7,0" />
+                    <TextBlock Text="额度" Foreground="#F2FFFFFF" FontSize="12" FontWeight="SemiBold" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock x:Name="StatusText"
+                               Foreground="#7AFFFFFF"
+                               FontSize="10"
+                               MaxWidth="112"
+                               TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                    <Button x:Name="SettingsButton"
+                            Style="{StaticResource IconButtonStyle}"
+                            Margin="0,0,3,0"
+                            ToolTip="设置"
+                            Click="OnSettingsClick">
+                        <TextBlock Text="&#xE713;"
+                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                   FontSize="11" />
+                    </Button>
+                    <Button x:Name="RefreshButton"
+                            Style="{StaticResource IconButtonStyle}"
+                            Margin="0,0,3,0"
+                            ToolTip="立即刷新 (F5)"
+                            Click="OnRefreshClick">
+                        <TextBlock Text="&#xE72C;"
+                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                   FontSize="11" />
+                    </Button>
+                    <Button x:Name="CloseButton"
+                            Style="{StaticResource CloseButtonStyle}"
+                            ToolTip="关闭 (Esc)"
+                            Click="OnCloseClick" />
+                </StackPanel>
+            </Grid>
+
+            <!-- 各额度窗口；负的下边距用来抵掉最后一项的间隔 -->
+            <ItemsControl x:Name="WindowsList" Grid.Row="1" Margin="0,10,0,-9">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,0,0,9">
+                            <!-- 标题 + 占比滚动数字（跟随水位变色） -->
+                            <Grid>
+                                <TextBlock Text="{Binding Title}"
+                                           Foreground="#EDFFFFFF"
+                                           FontSize="11"
+                                           VerticalAlignment="Center" />
+                                <controls:RollingNumberText Text="{Binding PercentText}"
+                                                            Foreground="{Binding BarBrush}"
+                                                            FontSize="14"
+                                                            FontWeight="SemiBold"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- 已用 / 限额，右侧跟重置倒计时 -->
+                            <Grid Margin="0,5,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <controls:RollingNumberText Text="{Binding UsedText}"
+                                                                Foreground="#F2FFFFFF"
+                                                                FontSize="13"
+                                                                FontWeight="SemiBold"
+                                                                VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding BudgetText}"
+                                               Foreground="#8AFFFFFF"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Margin="5,1,0,0" />
+                                </StackPanel>
+                                <controls:RollingNumberText Text="{Binding ResetText}"
+                                                            Foreground="#8AFFFFFF"
+                                                            FontSize="10"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- 绑 SmoothProgress.Target 而不是 Value，让水位平滑移动 -->
+                            <ProgressBar Style="{StaticResource UsageBarStyle}"
+                                         controls:SmoothProgress.Target="{Binding Percent, Mode=OneWay}"
+                                         Foreground="{Binding BarBrush}"
+                                         Margin="0,6,0,0" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+    </Border>
+</local:GlassWindow>

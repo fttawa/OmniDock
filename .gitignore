@@ -1,0 +1,14 @@
+# 生成物
+bin/
+obj/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# 发布输出
+publish/
+*.zip

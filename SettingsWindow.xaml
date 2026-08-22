@@ -1,0 +1,126 @@
+<local:GlassWindow x:Class="OmniDock.SettingsWindow"
+                   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="clr-namespace:OmniDock"
+                   Title="OmniDock 设置"
+                   Width="252"
+                   SizeToContent="Height"
+                   TextOptions.TextFormattingMode="Ideal">
+
+    <Border x:Name="RootContent" CornerRadius="8" BorderThickness="1" BorderBrush="#26FFFFFF">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0.4,1">
+                <GradientStop Offset="0" Color="#0EFFFFFF" />
+                <GradientStop Offset="1" Color="#02FFFFFF" />
+            </LinearGradientBrush>
+        </Border.Background>
+
+        <StackPanel Margin="13,10,11,12">
+
+            <!-- 标题栏 -->
+            <Grid>
+                <TextBlock Text="设置" Foreground="#F2FFFFFF" FontSize="12" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+                <Button Style="{StaticResource CloseButtonStyle}"
+                        HorizontalAlignment="Right"
+                        ToolTip="关闭 (Esc)"
+                        Click="OnCloseClick" />
+            </Grid>
+
+            <!-- 界面缩放 -->
+            <Grid Margin="0,12,0,0">
+                <TextBlock Text="界面缩放" Style="{StaticResource SettingLabelStyle}" />
+                <TextBlock x:Name="ScaleValue" Style="{StaticResource SettingValueStyle}" />
+            </Grid>
+            <Slider x:Name="ScaleSlider"
+                    Style="{StaticResource SettingSliderStyle}"
+                    Minimum="0.8" Maximum="1.6"
+                    SmallChange="0.05" LargeChange="0.1"
+                    TickFrequency="0.05" IsSnapToTickEnabled="True"
+                    Margin="0,4,0,0"
+                    ValueChanged="OnScaleChanged" />
+
+            <!-- 窗口宽度 -->
+            <Grid Margin="0,10,0,0">
+                <TextBlock Text="窗口宽度" Style="{StaticResource SettingLabelStyle}" />
+                <TextBlock x:Name="WidthValue" Style="{StaticResource SettingValueStyle}" />
+            </Grid>
+            <Slider x:Name="WidthSlider"
+                    Style="{StaticResource SettingSliderStyle}"
+                    Minimum="240" Maximum="440"
+                    SmallChange="4" LargeChange="20"
+                    TickFrequency="4" IsSnapToTickEnabled="True"
+                    Margin="0,4,0,0"
+                    ValueChanged="OnWidthChanged" />
+
+            <!-- 玻璃厚度 -->
+            <Grid Margin="0,10,0,0">
+                <TextBlock Text="玻璃厚度" Style="{StaticResource SettingLabelStyle}" />
+                <TextBlock x:Name="GlassValue" Style="{StaticResource SettingValueStyle}" />
+            </Grid>
+            <Slider x:Name="GlassSlider"
+                    Style="{StaticResource SettingSliderStyle}"
+                    Minimum="4" Maximum="128"
+                    SmallChange="2" LargeChange="8"
+                    TickFrequency="2" IsSnapToTickEnabled="True"
+                    Margin="0,4,0,0"
+                    ValueChanged="OnGlassChanged" />
+
+            <!-- 刷新间隔 -->
+            <Grid Margin="0,10,0,0">
+                <TextBlock Text="刷新间隔" Style="{StaticResource SettingLabelStyle}" />
+                <TextBlock x:Name="RefreshValue" Style="{StaticResource SettingValueStyle}" />
+            </Grid>
+            <Slider x:Name="RefreshSlider"
+                    Style="{StaticResource SettingSliderStyle}"
+                    Minimum="1" Maximum="60"
+                    SmallChange="1" LargeChange="5"
+                    TickFrequency="1" IsSnapToTickEnabled="True"
+                    Margin="0,4,0,0"
+                    ValueChanged="OnRefreshChanged" />
+
+            <!-- 强调色 -->
+            <Grid Margin="0,12,0,0">
+                <TextBlock Text="强调色" Style="{StaticResource SettingLabelStyle}" />
+                <StackPanel x:Name="AccentPanel"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Margin="0,-3,-3,-3" />
+            </Grid>
+
+            <!-- 窗口置顶 -->
+            <Grid Margin="0,12,0,0">
+                <TextBlock Text="窗口置顶" Style="{StaticResource SettingLabelStyle}" />
+                <CheckBox x:Name="TopmostToggle"
+                          Style="{StaticResource ToggleSwitchStyle}"
+                          HorizontalAlignment="Right"
+                          Checked="OnTopmostChanged"
+                          Unchecked="OnTopmostChanged" />
+            </Grid>
+
+            <!-- 恢复默认 -->
+            <Button x:Name="ResetButton"
+                    Margin="0,14,0,0"
+                    Height="26"
+                    Cursor="Hand"
+                    Foreground="#CCFFFFFF"
+                    FontSize="11"
+                    Content="恢复默认"
+                    Click="OnResetClick">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="#14FFFFFF" CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#2EFFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+        </StackPanel>
+    </Border>
+</local:GlassWindow>
