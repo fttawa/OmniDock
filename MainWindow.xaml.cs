@@ -261,10 +261,13 @@ public partial class MainWindow : GlassWindow
 
     private async Task OnHeartbeatAsync()
     {
-        // 倒计时是本地推进的，不依赖请求成功
-        foreach (var window in _windows)
+        // 关掉内置计时器后，倒计时不在这里推进，只由收到的数据驱动
+        if (_settings.UseLocalTicker)
         {
-            window.RefreshCountdown();
+            foreach (var window in _windows)
+            {
+                window.RefreshCountdown();
+            }
         }
 
         // 倒计时在走，同一个速率的撞墙结论会随时间翻转，所以每拍都要判一次

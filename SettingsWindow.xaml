@@ -99,6 +99,16 @@
             </Grid>
 
             <Grid Margin="0,9,0,0">
+                <TextBlock Text="内置计时器" Style="{StaticResource SettingLabelStyle}"
+                           ToolTip="开启则本地每秒推进倒计时；关闭则只在收到数据时更新" />
+                <CheckBox x:Name="TickerToggle"
+                          Style="{StaticResource ToggleSwitchStyle}"
+                          HorizontalAlignment="Right"
+                          Checked="OnTickerChanged"
+                          Unchecked="OnTickerChanged" />
+            </Grid>
+
+            <Grid Margin="0,9,0,0">
                 <TextBlock Text="额度告警" Style="{StaticResource SettingLabelStyle}"
                            ToolTip="水位超过 85% 或预计在重置前用光时闪一下" />
                 <CheckBox x:Name="AlertsToggle"

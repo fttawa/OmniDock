@@ -54,6 +54,7 @@ public partial class SettingsWindow : GlassWindow
         RefreshSlider.Value = _settings.RefreshSeconds;
 
         TopmostToggle.IsChecked = _settings.AlwaysOnTop;
+        TickerToggle.IsChecked = _settings.UseLocalTicker;
         AlertsToggle.IsChecked = _settings.EnableAlerts;
         TrayToggle.IsChecked = _settings.ShowTrayIcon;
         CloseToTrayToggle.IsChecked = _settings.CloseToTray;
@@ -61,7 +62,7 @@ public partial class SettingsWindow : GlassWindow
         // 自启的真实状态在注册表里，不在配置里
         AutoStartToggle.IsChecked = AutoStart.IsEnabled();
 
-        foreach (var toggle in new[] { TopmostToggle, AlertsToggle, AutoStartToggle, TrayToggle, CloseToTrayToggle })
+        foreach (var toggle in new[] { TopmostToggle, TickerToggle, AlertsToggle, AutoStartToggle, TrayToggle, CloseToTrayToggle })
         {
             toggle.Background = Theme.Accent;
         }
@@ -189,6 +190,17 @@ public partial class SettingsWindow : GlassWindow
         Commit();
     }
 
+    private void OnTickerChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.UseLocalTicker = TickerToggle.IsChecked == true;
+        Commit();
+    }
+
     private void OnAlertsChanged(object sender, RoutedEventArgs e)
     {
         if (_loading)
@@ -259,6 +271,7 @@ public partial class SettingsWindow : GlassWindow
         _settings.AccentColor = defaults.AccentColor;
         _settings.RefreshSeconds = defaults.RefreshSeconds;
         _settings.AlwaysOnTop = defaults.AlwaysOnTop;
+        _settings.UseLocalTicker = defaults.UseLocalTicker;
         _settings.EnableAlerts = defaults.EnableAlerts;
         _settings.ShowTrayIcon = defaults.ShowTrayIcon;
         _settings.CloseToTray = defaults.CloseToTray;

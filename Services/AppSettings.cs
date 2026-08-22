@@ -29,6 +29,13 @@ internal sealed class AppSettings
     /// <summary>是否置顶。</summary>
     public bool AlwaysOnTop { get; set; } = true;
 
+    /// <summary>
+    /// 内置计时器：由本地心跳每秒推进倒计时。
+    /// 关掉之后倒计时只在收到响应时按 reset_at 重算，显示的完全是服务端确认过的数据，
+    /// 代价是更新粒度变成刷新间隔。
+    /// </summary>
+    public bool UseLocalTicker { get; set; } = true;
+
     /// <summary>水位过高或预计撞墙时闪一下提醒。</summary>
     public bool EnableAlerts { get; set; } = true;
 
