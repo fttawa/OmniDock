@@ -20,6 +20,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     private double _projectedPercent;
     private double _used;
     private double _budget;
+    private double _referenceRate;
     private bool _willRunOut;
     private Brush _barBrush = Theme.Accent;
     private Brush _projectionBrush = Theme.AccentSoft;
@@ -151,16 +152,46 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     /// <summary>换了强调色之后重算配色，不必等下一次请求。</summary>
     internal void RefreshAccent() => BarBrush = BrushFor(Percent);
 
+    /// <summary>本窗口自己测出的平均速率，供外部汇总成参考速率。</summary>
+    internal double? OwnRatePerMinute { get; private set; }
+
     /// <summary>
-    /// 拿窗口内的平均速率和重置倒计时一比：会在重置之前用光才算有风险。
+    /// 外部给的参考速率（所有窗口里最快的那个）。
+    /// 长窗口自己的平均会把近期的猛涨摊平，用它推算会偏乐观。
+    /// </summary>
+    internal void SetReferenceRate(double ratePerMinute)
+    {
+        if (Math.Abs(_referenceRate - ratePerMinute) < 0.01d)
+        {
+            return;
+        }
+
+        _referenceRate = ratePerMinute;
+        RefreshForecast();
+    }
+
+    /// <summary>
+    /// 拿速率和重置倒计时一比：会在重置之前用光才算有风险。
     /// 每秒重算一次，因为倒计时在走，同一个速率的结论会随时间改变。
     /// </summary>
     private void RefreshForecast()
     {
         var now = DateTimeOffset.Now;
-        if (UsageForecast.Estimate(Name, _used, _budget, _resetAt, now) is not { } estimate)
+        OwnRatePerMinute = UsageForecast.MeasureRate(Name, _used, _resetAt, now);
+
+        // 已经见底，没什么可推算的
+        if (_budget > 0d && _used >= _budget)
         {
-            // 窗口刚开始，或者窗口名不认识
+            WillRunOut = true;
+            SetProjection(100d);
+            ForecastText = "额度已用尽";
+            ForecastBrush = Theme.Critical;
+            return;
+        }
+
+        if (OwnRatePerMinute is null && _referenceRate <= 0d)
+        {
+            // 自己样本不够，也没有别的窗口能借速率
             WillRunOut = false;
             SetProjection(Percent);
             ForecastText = "窗口刚开始";
@@ -168,7 +199,10 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (estimate.PerMinute <= 0d)
+        // 自己和参考速率取更快的那个：宁可早预警，也别因为长窗口把近期的
+        // 猛涨摊平而漏报
+        var rate = Math.Max(OwnRatePerMinute ?? 0d, _referenceRate);
+        if (rate <= 0d)
         {
             WillRunOut = false;
             SetProjection(Percent);
@@ -177,22 +211,13 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        // 缓冲段：已用量加上剩余时间里预计还会消耗的量
         var untilReset = _resetAt - now;
-        var projectedUsed = _used + estimate.PerMinute * Math.Max(0d, untilReset.TotalMinutes);
-        var projected = _budget > 0d ? projectedUsed / _budget * 100d : Percent;
-        SetProjection(projected);
+        var projection = UsageForecast.Project(_used, _budget, rate, untilReset);
+        SetProjection(projection.ProjectedPercent);
 
-        var rateText = $"均 {estimate.PerMinute:N0}/分";
-        if (estimate.ExhaustIn is not { } exhaust)
-        {
-            WillRunOut = false;
-            ForecastText = rateText;
-            ForecastBrush = Muted;
-            return;
-        }
-
-        if (exhaust < untilReset)
+        // 显示的就是推算所用的速率，否则数字对不上会让人困惑
+        var rateText = $"按 {rate:N0}/分";
+        if (projection.ExhaustIn is { } exhaust && exhaust < untilReset)
         {
             WillRunOut = true;
             ForecastText = $"{rateText} · 约 {Humanize(exhaust)}后用尽";

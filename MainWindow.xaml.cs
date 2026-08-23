@@ -239,6 +239,26 @@ public partial class MainWindow : GlassWindow
     }
 
     /// <summary>
+    /// 把所有窗口里最快的平均速率发给每个窗口当参考。
+    ///
+    /// 短窗口（5h）的平均更贴近当前强度，长窗口（7d）自己的平均会把近期的猛涨
+    /// 摊平到好几天上去，预测明显偏乐观。让长窗口也用这个更快的速率去推算，
+    /// 结论保守一些，宁可早预警。
+    /// </summary>
+    private void SyncReferenceRate()
+    {
+        var fastest = _windows
+            .Select(window => window.OwnRatePerMinute ?? 0d)
+            .DefaultIfEmpty(0d)
+            .Max();
+
+        foreach (var window in _windows)
+        {
+            window.SetReferenceRate(fastest);
+        }
+    }
+
+    /// <summary>
     /// 水位过高或预计撞墙时闪一下边框和状态灯。
     /// 只在「刚进入」这个状态时闪，否则每秒都会抖。
     /// </summary>
@@ -288,6 +308,8 @@ public partial class MainWindow : GlassWindow
             }
         }
 
+        SyncReferenceRate();
+
         // 倒计时在走，同一个速率的撞墙结论会随时间翻转，所以每拍都要判一次
         EvaluateAlert();
 
@@ -319,6 +341,7 @@ public partial class MainWindow : GlassWindow
 
             _retryInterval = _refreshInterval;
             Merge(snapshot.Windows);
+            SyncReferenceRate();
             SetStatus(NoticeFor(snapshot), $"{DateTime.Now:HH:mm:ss} 更新", StateBrush(snapshot));
             EvaluateAlert();
             UpdateTray();
