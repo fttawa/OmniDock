@@ -20,9 +20,6 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     private double _projectedPercent;
     private double _used;
     private double _budget;
-    private double _referenceRate;
-    private double _rateCap = double.PositiveInfinity;
-    private double _capWindowMinutes;
     private bool _willRunOut;
     private Brush _barBrush = Theme.Accent;
     private Brush _projectionBrush = Theme.AccentSoft;
@@ -120,7 +117,6 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         Title = TitleOf(dto.Name);
         _used = dto.Used;
         _budget = dto.Budget;
-        WindowMinutes = UsageForecast.ParseWindowLength(dto.Name)?.TotalMinutes ?? 0d;
 
         var percent = dto.Budget > 0 ? dto.Used / dto.Budget * 100d : 0d;
         Percent = Math.Clamp(percent, 0d, 100d);
@@ -155,48 +151,19 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     /// <summary>换了强调色之后重算配色，不必等下一次请求。</summary>
     internal void RefreshAccent() => BarBrush = BrushFor(Percent);
 
-    /// <summary>本窗口自己测出的平均速率，供外部汇总成参考速率。</summary>
-    internal double? OwnRatePerMinute { get; private set; }
-
-    /// <summary>本窗口的长度（分钟）；名字解析不出来时为 0。</summary>
-    internal double WindowMinutes { get; private set; }
-
     /// <summary>
-    /// 本窗口允许的长期平均速率上限：额度摊到整个窗口长度上。
-    /// 打满这个速率就意味着每个周期刚好用尽，再快就必须等重置。
-    /// </summary>
-    internal double SustainableRate => WindowMinutes > 0d ? _budget / WindowMinutes : 0d;
-
-    /// <summary>
-    /// 给出推算所需的外部条件。
-    /// <paramref name="referenceRate"/> 是所有窗口里最快的平均速率——长窗口自己的
-    /// 平均会把近期的猛涨摊平，用它推算会偏乐观。
-    /// <paramref name="cap"/> 是比本窗口更短的窗口所允许的长期平均上限：那些窗口
-    /// 会先撞墙并迫使等待，所以在本窗口的尺度上跑不过这个速度。
-    /// </summary>
-    internal void SetRateContext(double referenceRate, double cap, double capWindowMinutes)
-    {
-        if (Math.Abs(_referenceRate - referenceRate) < 0.01d
-            && Math.Abs(_rateCap - cap) < 0.01d
-            && Math.Abs(_capWindowMinutes - capWindowMinutes) < 0.01d)
-        {
-            return;
-        }
-
-        _referenceRate = referenceRate;
-        _rateCap = cap;
-        _capWindowMinutes = capWindowMinutes;
-        RefreshForecast();
-    }
-
-    /// <summary>
-    /// 拿速率和重置倒计时一比：会在重置之前用光才算有风险。
+    /// 拿本窗口自己的平均速率和重置倒计时一比：会在重置之前用光才算有风险。
+    ///
+    /// 只用自己的平均，不跟别的窗口互相借用或封顶：每个窗口的观测尺度正好匹配它
+    /// 要回答的问题——5 小时窗口反映最近不到一小时的强度，适合判断眼下要不要减速；
+    /// 7 天窗口反映几天的均值，适合判断这周还够不够。两行数字并排摆着，本身就说明
+    /// 了当前强度相对本周平均是高还是低。
+    ///
     /// 每秒重算一次，因为倒计时在走，同一个速率的结论会随时间改变。
     /// </summary>
     private void RefreshForecast()
     {
         var now = DateTimeOffset.Now;
-        OwnRatePerMinute = UsageForecast.MeasureRate(Name, _used, _resetAt, now);
 
         // 已经见底，没什么可推算的
         if (_budget > 0d && _used >= _budget)
@@ -208,9 +175,9 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (OwnRatePerMinute is null && _referenceRate <= 0d)
+        if (UsageForecast.MeasureRate(Name, _used, _resetAt, now) is not { } rate)
         {
-            // 自己样本不够，也没有别的窗口能借速率
+            // 窗口刚开始，分母太小，均值会离谱
             WillRunOut = false;
             SetProjection(Percent);
             ForecastText = "窗口刚开始";
@@ -218,9 +185,6 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        // 自己和参考速率取更快的那个：宁可早预警，也别因为长窗口把近期的
-        // 猛涨摊平而漏报
-        var rate = Math.Max(OwnRatePerMinute ?? 0d, _referenceRate);
         if (rate <= 0d)
         {
             WillRunOut = false;
@@ -231,21 +195,10 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         }
 
         var untilReset = _resetAt - now;
-
-        // 更短的窗口会先撞墙、迫使等待，所以在本窗口余下的这段时间里，
-        // 长期平均跑不过它允许的上限。只有余下时间确实跨过那个窗口的长度时才成立：
-        // 如果本窗口比它先重置，就不存在被它拖住的问题。
-        if (_rateCap > 0d
-            && !double.IsPositiveInfinity(_rateCap)
-            && untilReset.TotalMinutes > _capWindowMinutes)
-        {
-            rate = Math.Min(rate, _rateCap);
-        }
         var projection = UsageForecast.Project(_used, _budget, rate, untilReset);
         SetProjection(projection.ProjectedPercent);
 
-        // 显示的就是推算所用的速率，否则数字对不上会让人困惑
-        var rateText = $"按 {rate:N0}/分";
+        var rateText = $"均 {rate:N0}/分";
         if (projection.ExhaustIn is { } exhaust && exhaust < untilReset)
         {
             WillRunOut = true;
