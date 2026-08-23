@@ -239,22 +239,40 @@ public partial class MainWindow : GlassWindow
     }
 
     /// <summary>
-    /// 把所有窗口里最快的平均速率发给每个窗口当参考。
+    /// 给每个窗口配好推算所需的两个外部条件。
     ///
-    /// 短窗口（5h）的平均更贴近当前强度，长窗口（7d）自己的平均会把近期的猛涨
-    /// 摊平到好几天上去，预测明显偏乐观。让长窗口也用这个更快的速率去推算，
-    /// 结论保守一些，宁可早预警。
+    /// 参考速率：所有窗口里最快的平均。短窗口（5h）的平均更贴近当前强度，长窗口
+    /// （7d）自己的平均会把近期的猛涨摊平到好几天上去，预测明显偏乐观。
+    ///
+    /// 速率上限：比自己更短的窗口会先撞墙、迫使等待，所以在长窗口的尺度上，长期
+    /// 平均跑不过那些窗口的「额度 ÷ 窗口长度」。少了这一步，7 天窗口会拿短期突发
+    /// 的强度一路外推，算出根本达不到的耗尽速度。
     /// </summary>
-    private void SyncReferenceRate()
+    private void SyncRateContext()
     {
-        var fastest = _windows
-            .Select(window => window.OwnRatePerMinute ?? 0d)
-            .DefaultIfEmpty(0d)
-            .Max();
-
-        foreach (var window in _windows)
+        var known = _windows.Where(window => window.WindowMinutes > 0d).ToList();
+        if (known.Count == 0)
         {
-            window.SetReferenceRate(fastest);
+            return;
+        }
+
+        var fastest = known.Select(window => window.OwnRatePerMinute ?? 0d).DefaultIfEmpty(0d).Max();
+
+        foreach (var window in known)
+        {
+            // 取所有更短窗口里最严格的那个上限
+            var tighter = known
+                .Where(other => other.WindowMinutes < window.WindowMinutes && other.SustainableRate > 0d)
+                .OrderBy(other => other.SustainableRate)
+                .FirstOrDefault();
+
+            if (tighter is null)
+            {
+                window.SetRateContext(fastest, double.PositiveInfinity, 0d);
+                continue;
+            }
+
+            window.SetRateContext(fastest, tighter.SustainableRate, tighter.WindowMinutes);
         }
     }
 
@@ -308,7 +326,7 @@ public partial class MainWindow : GlassWindow
             }
         }
 
-        SyncReferenceRate();
+        SyncRateContext();
 
         // 倒计时在走，同一个速率的撞墙结论会随时间翻转，所以每拍都要判一次
         EvaluateAlert();
@@ -341,7 +359,7 @@ public partial class MainWindow : GlassWindow
 
             _retryInterval = _refreshInterval;
             Merge(snapshot.Windows);
-            SyncReferenceRate();
+            SyncRateContext();
             SetStatus(NoticeFor(snapshot), $"{DateTime.Now:HH:mm:ss} 更新", StateBrush(snapshot));
             EvaluateAlert();
             UpdateTray();

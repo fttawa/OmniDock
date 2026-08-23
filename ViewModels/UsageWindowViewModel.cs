@@ -21,6 +21,8 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     private double _used;
     private double _budget;
     private double _referenceRate;
+    private double _rateCap = double.PositiveInfinity;
+    private double _capWindowMinutes;
     private bool _willRunOut;
     private Brush _barBrush = Theme.Accent;
     private Brush _projectionBrush = Theme.AccentSoft;
@@ -118,6 +120,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         Title = TitleOf(dto.Name);
         _used = dto.Used;
         _budget = dto.Budget;
+        WindowMinutes = UsageForecast.ParseWindowLength(dto.Name)?.TotalMinutes ?? 0d;
 
         var percent = dto.Budget > 0 ? dto.Used / dto.Budget * 100d : 0d;
         Percent = Math.Clamp(percent, 0d, 100d);
@@ -155,18 +158,34 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     /// <summary>本窗口自己测出的平均速率，供外部汇总成参考速率。</summary>
     internal double? OwnRatePerMinute { get; private set; }
 
+    /// <summary>本窗口的长度（分钟）；名字解析不出来时为 0。</summary>
+    internal double WindowMinutes { get; private set; }
+
     /// <summary>
-    /// 外部给的参考速率（所有窗口里最快的那个）。
-    /// 长窗口自己的平均会把近期的猛涨摊平，用它推算会偏乐观。
+    /// 本窗口允许的长期平均速率上限：额度摊到整个窗口长度上。
+    /// 打满这个速率就意味着每个周期刚好用尽，再快就必须等重置。
     /// </summary>
-    internal void SetReferenceRate(double ratePerMinute)
+    internal double SustainableRate => WindowMinutes > 0d ? _budget / WindowMinutes : 0d;
+
+    /// <summary>
+    /// 给出推算所需的外部条件。
+    /// <paramref name="referenceRate"/> 是所有窗口里最快的平均速率——长窗口自己的
+    /// 平均会把近期的猛涨摊平，用它推算会偏乐观。
+    /// <paramref name="cap"/> 是比本窗口更短的窗口所允许的长期平均上限：那些窗口
+    /// 会先撞墙并迫使等待，所以在本窗口的尺度上跑不过这个速度。
+    /// </summary>
+    internal void SetRateContext(double referenceRate, double cap, double capWindowMinutes)
     {
-        if (Math.Abs(_referenceRate - ratePerMinute) < 0.01d)
+        if (Math.Abs(_referenceRate - referenceRate) < 0.01d
+            && Math.Abs(_rateCap - cap) < 0.01d
+            && Math.Abs(_capWindowMinutes - capWindowMinutes) < 0.01d)
         {
             return;
         }
 
-        _referenceRate = ratePerMinute;
+        _referenceRate = referenceRate;
+        _rateCap = cap;
+        _capWindowMinutes = capWindowMinutes;
         RefreshForecast();
     }
 
@@ -212,6 +231,16 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         }
 
         var untilReset = _resetAt - now;
+
+        // 更短的窗口会先撞墙、迫使等待，所以在本窗口余下的这段时间里，
+        // 长期平均跑不过它允许的上限。只有余下时间确实跨过那个窗口的长度时才成立：
+        // 如果本窗口比它先重置，就不存在被它拖住的问题。
+        if (_rateCap > 0d
+            && !double.IsPositiveInfinity(_rateCap)
+            && untilReset.TotalMinutes > _capWindowMinutes)
+        {
+            rate = Math.Min(rate, _rateCap);
+        }
         var projection = UsageForecast.Project(_used, _budget, rate, untilReset);
         SetProjection(projection.ProjectedPercent);
 

@@ -75,7 +75,7 @@ internal static class UsageForecast
     }
 
     /// <summary>窗口名就是它的长度：5h、7d、30m、2w。</summary>
-    private static TimeSpan? ParseWindowLength(string name)
+    internal static TimeSpan? ParseWindowLength(string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length < 2)
         {
