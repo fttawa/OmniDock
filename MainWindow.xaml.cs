@@ -129,6 +129,20 @@ public partial class MainWindow : GlassWindow
             && top + 32d > virtualTop;
     }
 
+    /// <summary>
+    /// 尺寸变化不会触发 OnLocationChanged，但设置面板落在下方时需要跟着主窗口的高度走，
+    /// 否则缩放一改就被压住或留出空档。放在左侧时算出来是同一个位置，不会动。
+    /// </summary>
+    protected override void OnRenderSizeChanged(SizeChangedInfo info)
+    {
+        base.OnRenderSizeChanged(info);
+
+        if (_settingsWindow is { IsLoaded: true } panel)
+        {
+            PlaceBesideMain(panel);
+        }
+    }
+
     protected override void OnLocationChanged(EventArgs e)
     {
         base.OnLocationChanged(e);
@@ -186,17 +200,21 @@ public partial class MainWindow : GlassWindow
     {
         _settings.Clamped();
 
-        // 贴着右上角，所以改宽度时让右边缘不动；位置还没恢复时无从锚定
-        var anchorRight = _positionRestored ? Left + Width : double.NaN;
-
         RootBorder.Width = _settings.ContentWidth;
         RootScale.ScaleX = _settings.Scale;
         RootScale.ScaleY = _settings.Scale;
         Width = _settings.ContentWidth * _settings.Scale;
 
-        if (!double.IsNaN(anchorRight))
+        // 左上角保持不动、向右下扩展：设置面板在左侧，若改成让右边缘不动，
+        // 窗口就会往左长过去把面板顶开——用户正在拖的滑块自己在跑。
+        // 只有右边缘顶出工作区时才把窗口拉回来。
+        if (_positionRestored)
         {
-            Left = anchorRight - Width;
+            var workArea = SystemParameters.WorkArea;
+            if (Left + Width > workArea.Right)
+            {
+                Left = Math.Max(workArea.Left, workArea.Right - Width);
+            }
         }
 
         Topmost = _settings.AlwaysOnTop;
