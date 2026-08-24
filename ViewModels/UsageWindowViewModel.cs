@@ -240,12 +240,43 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         _ => Theme.Accent
     };
 
-    private static string TitleOf(string name) => name switch
+    /// <summary>
+    /// 名字形如 5h / 7d / 7d_fable：下划线前是窗口长度，后面是这份额度的归属。
+    /// 不写死具体名字，服务端将来加别的窗口也能显示成人话。
+    /// </summary>
+    private static string TitleOf(string name)
     {
-        "5h" => "5 小时",
-        "7d" => "7 天",
-        _ => name
-    };
+        if (string.IsNullOrEmpty(name))
+        {
+            return name;
+        }
+
+        var split = name.IndexOf('_');
+        var label = LengthLabel(split < 0 ? name : name[..split]);
+
+        if (split < 0 || split + 1 >= name.Length)
+        {
+            return label;
+        }
+
+        var owner = name[(split + 1)..];
+        return $"{label} · {char.ToUpperInvariant(owner[0])}{owner[1..]}";
+    }
+
+    private static string LengthLabel(string token)
+    {
+        if (UsageForecast.ParseWindowLength(token) is not { } span)
+        {
+            return token;
+        }
+
+        return span switch
+        {
+            { TotalDays: >= 1d } => $"{span.TotalDays:0.#} 天",
+            { TotalHours: >= 1d } => $"{span.TotalHours:0.#} 小时",
+            _ => $"{span.TotalMinutes:0.#} 分钟"
+        };
+    }
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? property = null)
     {

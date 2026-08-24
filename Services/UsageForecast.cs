@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace OmniDock.Services;
 
 /// <summary>按某个速率推算出来的结果。</summary>
@@ -74,7 +76,11 @@ internal static class UsageForecast
         return new UsageProjection(projectedPercent, exhaustIn);
     }
 
-    /// <summary>窗口名就是它的长度：5h、7d、30m、2w。</summary>
+    /// <summary>
+    /// 窗口名的开头就是它的长度：5h、7d、30m、2w。
+    /// 后面可能跟着额度归属的后缀（7d_fable），解析时忽略——
+    /// 按最后一个字符取单位会读到 e 而整个解析失败。
+    /// </summary>
     internal static TimeSpan? ParseWindowLength(string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length < 2)
@@ -82,12 +88,24 @@ internal static class UsageForecast
             return null;
         }
 
-        if (!double.TryParse(name[..^1], out var amount) || amount <= 0d)
+        // 先吃掉开头连续的数字，紧接着那一个字符就是单位
+        var digits = 0;
+        while (digits < name.Length && (char.IsAsciiDigit(name[digits]) || name[digits] == '.'))
+        {
+            digits++;
+        }
+
+        if (digits == 0 || digits >= name.Length)
         {
             return null;
         }
 
-        return char.ToLowerInvariant(name[^1]) switch
+        if (!double.TryParse(name[..digits], CultureInfo.InvariantCulture, out var amount) || amount <= 0d)
+        {
+            return null;
+        }
+
+        return char.ToLowerInvariant(name[digits]) switch
         {
             'm' => TimeSpan.FromMinutes(amount),
             'h' => TimeSpan.FromHours(amount),
