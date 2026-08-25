@@ -31,6 +31,9 @@ public partial class MainWindow : GlassWindow
     private DateTime _lastAttemptUtc = DateTime.MinValue;
     private bool _fetching;
 
+    /// <summary>当前的故障说明（不含倒计时）；为 null 表示一切正常。</summary>
+    private string? _errorNotice;
+
     /// <summary>位置恢复完成前不记录移动，否则会把本次启动的默认位置覆盖掉存档。</summary>
     private bool _positionRestored;
 
@@ -288,6 +291,9 @@ public partial class MainWindow : GlassWindow
             }
         }
 
+        // 故障状态下的重试倒计时也要每拍推进（正常时这个调用什么都不做）
+        UpdateRetryCountdown();
+
         // 倒计时在走，同一个速率的撞墙结论会随时间翻转，所以每拍都要判一次
         EvaluateAlert();
 
@@ -312,11 +318,13 @@ public partial class MainWindow : GlassWindow
             var snapshot = await _client.FetchAsync(_shutdown.Token);
             if (snapshot?.Windows is null or { Count: 0 })
             {
+                _errorNotice = "找不到本地代理";
                 BackOff();
-                SetStatus($"找不到本地代理 · {(int)_retryInterval.TotalSeconds}s 后重试", string.Empty, Theme.Critical);
+                UpdateRetryCountdown();
                 return;
             }
 
+            _errorNotice = null;
             _retryInterval = _refreshInterval;
             Merge(snapshot.Windows);
             SetStatus(NoticeFor(snapshot), $"{DateTime.Now:HH:mm:ss} 更新", StateBrush(snapshot));
@@ -329,13 +337,34 @@ public partial class MainWindow : GlassWindow
         }
         catch (Exception ex)
         {
+            _errorNotice = $"读取失败：{ex.GetType().Name}";
             BackOff();
-            SetStatus($"读取失败：{ex.GetType().Name} · {(int)_retryInterval.TotalSeconds}s 后重试", string.Empty, Theme.Critical);
+            UpdateRetryCountdown();
         }
         finally
         {
             _fetching = false;
         }
+    }
+
+    /// <summary>
+    /// 故障状态下那行「N 秒后重试」得自己走。只在失败瞬间写一次的话，
+    /// 显示的是退避间隔有多长，而不是还剩多久重试。
+    /// </summary>
+    private void UpdateRetryCountdown()
+    {
+        if (_errorNotice is null)
+        {
+            return;
+        }
+
+        var left = _retryInterval - (DateTime.UtcNow - _lastAttemptUtc);
+        var seconds = (int)Math.Ceiling(Math.Max(0d, left.TotalSeconds));
+
+        SetStatus(
+            seconds > 0 ? $"{_errorNotice} · {seconds}s 后重试" : $"{_errorNotice} · 正在重试",
+            string.Empty,
+            Theme.Critical);
     }
 
     /// <summary>连不上就逐步拉长间隔，成功后由调用方恢复成设置里的间隔。</summary>
