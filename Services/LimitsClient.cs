@@ -76,17 +76,14 @@ internal sealed class LimitsClient : IDisposable
     {
         var sawAuthFailure = false;
 
-        // 已知端点直接用，失败了才重新发现（代理重启换端口时会走到这里）
+        // 已知端点直接用；一旦不是成功就清掉、重新完整扫描。
+        // 不对 401 短路：同一进程可能开多个端口，只有部分是 limits 端点（另一些
+        // 对同一 token 返回 401），或者机器上有多个代理实例，记住的端点恰好是死的。
+        // 短路会永远卡在坏端点，发现不了那个真正能用的。
         if (_knownEndpoint is not null)
         {
             var known = await TryFetchAsync(_knownEndpoint, _http, ct).ConfigureAwait(false);
             if (known.Status == FetchStatus.Ok)
-            {
-                return known;
-            }
-
-            // 认证不通过说明端点是对的、只是 token 不行，没必要再去扫端口
-            if (known.Status == FetchStatus.Unauthorized)
             {
                 return known;
             }

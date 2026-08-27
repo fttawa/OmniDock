@@ -378,6 +378,15 @@ public partial class MainWindow : GlassWindow
     {
         if (status == FetchStatus.Unauthorized)
         {
+            // 会话 hook 可能已把新 token 写进配置文件，重读一次看看——
+            // 正在运行的实例把 token 存在内存里，不会自己重读
+            if (ReloadStoredToken())
+            {
+                _errorNotice = "Token 已更新，重连中";
+                _errorActionable = false;
+                return;
+            }
+
             _errorNotice = "Token 失效，请在设置里更新";
             _errorActionable = true;
             return;
@@ -423,7 +432,22 @@ public partial class MainWindow : GlassWindow
             _errorActionable ? Theme.Critical : Theme.Accent);
     }
 
-    /// <summary>连不上就逐步拉长间隔，成功后由调用方恢复成设置里的间隔。</summary>
+    /// <summary>从磁盘重读 token（会话 hook 可能刚更新过）；确实变了就装载并返回 true。</summary>
+    private bool ReloadStoredToken()
+    {
+        var latest = SettingsStore.Load().AuthToken;
+        if (string.IsNullOrEmpty(latest) || latest == _settings.AuthToken)
+        {
+            return false;
+        }
+
+        _settings.AuthToken = latest;
+        _client.StoredToken = latest;
+        _retryInterval = _refreshInterval; // 有新 token，别退避，尽快重试
+        return true;
+    }
+
+        /// <summary>连不上就逐步拉长间隔，成功后由调用方恢复成设置里的间隔。</summary>
     private void BackOff()
         => _retryInterval = TimeSpan.FromSeconds(
             Math.Min(_retryInterval.TotalSeconds * 2d, MaxRetryInterval.TotalSeconds));
