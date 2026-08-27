@@ -159,6 +159,10 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     /// 7 天窗口反映几天的均值，适合判断这周还够不够。两行数字并排摆着，本身就说明
     /// 了当前强度相对本周平均是高还是低。
     ///
+    /// 跨天窗口在样本凑满一个昼夜之前不下撞墙结论：那会儿采到的全是连续工作时段，
+    /// 拿它外推等于假设人接下来几天不吃不睡。这种时候改成把当前强度和匀速线
+    /// 并排摆着，超没超速一眼能看出来，又不必替用户编一个耗尽时间。
+    ///
     /// 每秒重算一次，因为倒计时在走，同一个速率的结论会随时间改变。
     /// </summary>
     private void RefreshForecast()
@@ -175,7 +179,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (UsageForecast.MeasureRate(Name, _used, _resetAt, now) is not { } rate)
+        if (UsageForecast.MeasureRate(Name, _used, _resetAt, now) is not { } sample)
         {
             // 窗口刚开始，分母太小，均值会离谱
             WillRunOut = false;
@@ -185,7 +189,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (rate <= 0d)
+        if (sample.PerMinute <= 0d)
         {
             WillRunOut = false;
             SetProjection(Percent);
@@ -194,11 +198,24 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             return;
         }
 
+        // 样本还没覆盖一个昼夜：报现状，不外推。缓冲段也不画——
+        // 画出来就等于宣称「接下来会一直这么用」，而这正是要避免的那个假设
+        if (!sample.Representative)
+        {
+            WillRunOut = false;
+            SetProjection(Percent);
+            ForecastText = UsageForecast.EvenRate(Name, _budget) is { } even
+                ? $"现 {sample.PerMinute:N0}/分 · 匀速 {even:N0}/分"
+                : $"现 {sample.PerMinute:N0}/分";
+            ForecastBrush = Muted;
+            return;
+        }
+
         var untilReset = _resetAt - now;
-        var projection = UsageForecast.Project(_used, _budget, rate, untilReset);
+        var projection = UsageForecast.Project(_used, _budget, sample.PerMinute, untilReset);
         SetProjection(projection.ProjectedPercent);
 
-        var rateText = $"均 {rate:N0}/分";
+        var rateText = $"均 {sample.PerMinute:N0}/分";
         if (projection.ExhaustIn is { } exhaust && exhaust < untilReset)
         {
             WillRunOut = true;
