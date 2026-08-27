@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -22,16 +23,31 @@ internal sealed record LimitsDto(
     [property: JsonPropertyName("degraded")] bool Degraded,
     [property: JsonPropertyName("windows")] IReadOnlyList<UsageWindowDto>? Windows);
 
+/// <summary>拉取的结果：区分「没找到代理」和「找到了但认证不通过」。</summary>
+internal enum FetchStatus
+{
+    Ok,
+    NotReachable,
+    Unauthorized
+}
+
+internal readonly record struct FetchResult(FetchStatus Status, LimitsDto? Data);
+
 /// <summary>
 /// 从本机的 Mirasim 本地代理读取额度。
 ///
-/// 代理只监听回环地址，对本机请求不校验凭据，所以这里不需要、也不去碰任何 token
-/// （若环境里正好有 ANTHROPIC_AUTH_TOKEN 会顺带带上，纯粹为了兼容将来开启校验的情况）。
-/// 端口每次启动都变，因此按「环境变量 → 上次成功的端点 → 代理进程监听的端口」依次尝试。
+/// 代理要求带入口 token（早期版本对回环请求免认证，后来改了）。token 由代理每次启动
+/// 新生成并注入会话环境，不落盘，所以这里按「会话环境变量 → 存下来的那个」取用；
+/// 两者都没有就只能等用户在设置里手填。
+///
+/// 端口每次启动也都变，因此按「环境变量 → 上次成功的端点 → 代理进程监听的端口」依次尝试。
 /// </summary>
 internal sealed class LimitsClient : IDisposable
 {
     private const string ProxyProcessName = "Mirasim";
+
+    /// <summary>用户手填或上次自动存下的 token；会话环境里有值时优先用环境里的。</summary>
+    internal string? StoredToken { get; set; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -56,15 +72,23 @@ internal sealed class LimitsClient : IDisposable
     /// <summary>当前生效的端点，拿不到数据时为 null。</summary>
     internal Uri? Endpoint => _knownEndpoint;
 
-    internal async Task<LimitsDto?> FetchAsync(CancellationToken ct)
+    internal async Task<FetchResult> FetchAsync(CancellationToken ct)
     {
+        var sawAuthFailure = false;
+
         // 已知端点直接用，失败了才重新发现（代理重启换端口时会走到这里）
         if (_knownEndpoint is not null)
         {
-            var snapshot = await TryFetchAsync(_knownEndpoint, _http, ct).ConfigureAwait(false);
-            if (snapshot is not null)
+            var known = await TryFetchAsync(_knownEndpoint, _http, ct).ConfigureAwait(false);
+            if (known.Status == FetchStatus.Ok)
             {
-                return snapshot;
+                return known;
+            }
+
+            // 认证不通过说明端点是对的、只是 token 不行，没必要再去扫端口
+            if (known.Status == FetchStatus.Unauthorized)
+            {
+                return known;
             }
 
             _knownEndpoint = null;
@@ -72,18 +96,37 @@ internal sealed class LimitsClient : IDisposable
 
         foreach (var candidate in EnumerateCandidates().Distinct())
         {
-            var snapshot = await TryFetchAsync(candidate, _probe, ct).ConfigureAwait(false);
-            if (snapshot is null)
+            var attempt = await TryFetchAsync(candidate, _probe, ct).ConfigureAwait(false);
+
+            if (attempt.Status == FetchStatus.Unauthorized)
+            {
+                // 这个端口确实是代理，记下来；继续试别的端口万一有免认证的
+                sawAuthFailure = true;
+                _knownEndpoint = candidate;
+                SaveCachedEndpoint(candidate);
+                continue;
+            }
+
+            if (attempt.Status != FetchStatus.Ok)
             {
                 continue;
             }
 
             _knownEndpoint = candidate;
             SaveCachedEndpoint(candidate);
-            return snapshot;
+            return attempt;
         }
 
-        return null;
+        return new FetchResult(
+            sawAuthFailure ? FetchStatus.Unauthorized : FetchStatus.NotReachable,
+            null);
+    }
+
+    /// <summary>会话环境里的最新鲜，其次才是存下来的。</summary>
+    private string? ResolveToken()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+        return !string.IsNullOrWhiteSpace(fromEnv) ? fromEnv : StoredToken;
     }
 
     private static IEnumerable<Uri> EnumerateCandidates()
@@ -107,7 +150,7 @@ internal sealed class LimitsClient : IDisposable
         }
     }
 
-    private static async Task<LimitsDto?> TryFetchAsync(Uri baseUri, HttpClient http, CancellationToken ct)
+    private async Task<FetchResult> TryFetchAsync(Uri baseUri, HttpClient http, CancellationToken ct)
     {
         try
         {
@@ -115,27 +158,37 @@ internal sealed class LimitsClient : IDisposable
             var url = baseUri.AbsoluteUri.TrimEnd('/') + "/v1/limits";
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-            var token = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
-            if (!string.IsNullOrEmpty(token))
+            // 两种头都带：实测都能通过，将来它只认其中一种也不会挂
+            if (ResolveToken() is { Length: > 0 } token)
             {
                 request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+                request.Headers.TryAddWithoutValidation("x-api-key", token);
             }
 
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct)
                 .ConfigureAwait(false);
+
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                return new FetchResult(FetchStatus.Unauthorized, null);
+            }
+
             if (!response.IsSuccessStatusCode)
             {
-                return null;
+                return new FetchResult(FetchStatus.NotReachable, null);
             }
 
             var dto = await response.Content.ReadFromJsonAsync<LimitsDto>(JsonOptions, ct).ConfigureAwait(false);
 
             // 必须真的带回窗口数据，否则说明这个端口是别的服务
-            return dto?.Windows is { Count: > 0 } ? dto : null;
+            return dto?.Windows is { Count: > 0 }
+                ? new FetchResult(FetchStatus.Ok, dto)
+                : new FetchResult(FetchStatus.NotReachable, null);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or NotSupportedException)
         {
-            return null; // 端口不是代理、超时、返回的不是预期 JSON，都只当作这个候选不可用
+            // 端口不是代理、超时、返回的不是预期 JSON，都只当作这个候选不可用
+            return new FetchResult(FetchStatus.NotReachable, null);
         }
     }
 

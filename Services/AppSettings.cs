@@ -45,6 +45,12 @@ internal sealed class AppSettings
     /// <summary>点关闭时收进托盘而不是退出（需要托盘图标开着）。</summary>
     public bool CloseToTray { get; set; }
 
+    /// <summary>
+    /// 本地代理的入口 token。代理每次启动会新生成一个并注入会话环境，从会话里启动时
+    /// 程序会顺手把它存下来，这样双击或开机自启也能用；过期了可以在设置里手填。
+    /// </summary>
+    public string AuthToken { get; set; } = string.Empty;
+
     /// <summary>上次关闭时的窗口位置；为空表示还没记过，用默认的右上角。</summary>
     public double? WindowLeft { get; set; }
 

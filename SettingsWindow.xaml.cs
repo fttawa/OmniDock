@@ -62,6 +62,9 @@ public partial class SettingsWindow : GlassWindow
         // 自启的真实状态在注册表里，不在配置里
         AutoStartToggle.IsChecked = AutoStart.IsEnabled();
 
+        TokenBox.Password = _settings.AuthToken;
+        UpdateTokenState();
+
         foreach (var toggle in new[] { TopmostToggle, TickerToggle, AlertsToggle, AutoStartToggle, TrayToggle, CloseToTrayToggle })
         {
             toggle.Background = Theme.Accent;
@@ -201,6 +204,35 @@ public partial class SettingsWindow : GlassWindow
         Commit();
     }
 
+    /// <summary>只露前几位，够辨认是不是当前那个就行，不把凭据整个摊在屏幕上。</summary>
+    private void UpdateTokenState()
+    {
+        var token = _settings.AuthToken;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            TokenState.Text = "未设置";
+            return;
+        }
+
+        var fromEnv = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+        var live = !string.IsNullOrWhiteSpace(fromEnv) && fromEnv == token;
+        var head = token.Length > 7 ? token[..7] : token;
+
+        TokenState.Text = live ? $"{head}…（自动）" : $"{head}…";
+    }
+
+    private void OnTokenChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.AuthToken = TokenBox.Password.Trim();
+        UpdateTokenState();
+        Commit();
+    }
+
     private void OnAlertsChanged(object sender, RoutedEventArgs e)
     {
         if (_loading)
@@ -275,6 +307,7 @@ public partial class SettingsWindow : GlassWindow
         _settings.EnableAlerts = defaults.EnableAlerts;
         _settings.ShowTrayIcon = defaults.ShowTrayIcon;
         _settings.CloseToTray = defaults.CloseToTray;
+        // AuthToken 不恢复默认：清掉它程序就直接失联了，而且它不算外观设置
 
         Theme.SetAccent(_settings.AccentColor);
         _loading = true;

@@ -147,6 +147,25 @@
                           Unchecked="OnCloseToTrayChanged" />
             </Grid>
 
+            <!-- 入口 Token：代理重启会换新，从会话启动时自动续上，这里可手动兜底 -->
+            <Grid Margin="0,14,0,0">
+                <TextBlock Text="入口 Token" Style="{StaticResource SettingLabelStyle}" />
+                <TextBlock x:Name="TokenState" Style="{StaticResource SettingValueStyle}" />
+            </Grid>
+            <Border Margin="0,5,0,0"
+                    Background="#14FFFFFF"
+                    CornerRadius="5"
+                    Padding="7,4,7,4">
+                <PasswordBox x:Name="TokenBox"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Foreground="#E8FFFFFF"
+                             FontSize="11"
+                             CaretBrush="#E8FFFFFF"
+                             PasswordChar="●"
+                             PasswordChanged="OnTokenChanged" />
+            </Border>
+
             <!-- 恢复默认 -->
             <Button x:Name="ResetButton"
                     Margin="0,14,0,0"

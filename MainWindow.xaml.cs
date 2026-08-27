@@ -43,6 +43,9 @@ public partial class MainWindow : GlassWindow
         _refreshInterval = TimeSpan.FromSeconds(_settings.RefreshSeconds);
         _retryInterval = _refreshInterval;
 
+        AdoptTokenFromEnvironment();
+        _client.StoredToken = _settings.AuthToken;
+
         InitializeComponent();
         WindowsList.ItemsSource = _windows;
 
@@ -64,6 +67,22 @@ public partial class MainWindow : GlassWindow
         _tray.ExitRequested += ExitApplication;
         _tray.AutoStartChanged += _ => { }; // 托盘里改自启只影响注册表，无需落盘设置
         _tray.SyncAutoStart(AutoStart.IsEnabled());
+    }
+
+    /// <summary>
+    /// 代理的入口 token 只注入会话环境、不落盘，每次代理重启还会换新。
+    /// 从会话里启动时顺手存一份，这样之后双击或开机自启也能用。
+    /// </summary>
+    private void AdoptTokenFromEnvironment()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
+        if (string.IsNullOrWhiteSpace(fromEnv) || fromEnv == _settings.AuthToken)
+        {
+            return;
+        }
+
+        _settings.AuthToken = fromEnv;
+        SettingsStore.Save(_settings);
     }
 
     /// <summary>托盘点一下：藏起来的显示出来，显示中的藏起来。</summary>
@@ -239,6 +258,7 @@ public partial class MainWindow : GlassWindow
         }
 
         _tray.Visible = _settings.ShowTrayIcon;
+        _client.StoredToken = _settings.AuthToken;
     }
 
     /// <summary>
@@ -315,10 +335,13 @@ public partial class MainWindow : GlassWindow
         _lastAttemptUtc = DateTime.UtcNow;
         try
         {
-            var snapshot = await _client.FetchAsync(_shutdown.Token);
-            if (snapshot?.Windows is null or { Count: 0 })
+            var result = await _client.FetchAsync(_shutdown.Token);
+            if (result is not { Status: FetchStatus.Ok, Data: { Windows: { Count: > 0 } windows } snapshot })
             {
-                _errorNotice = "找不到本地代理";
+                // 认证失败要单独说，否则用户会以为是代理没开而白白重启它
+                _errorNotice = result.Status == FetchStatus.Unauthorized
+                    ? "Token 无效，请在设置里更新"
+                    : "找不到本地代理";
                 BackOff();
                 UpdateRetryCountdown();
                 return;
@@ -326,7 +349,7 @@ public partial class MainWindow : GlassWindow
 
             _errorNotice = null;
             _retryInterval = _refreshInterval;
-            Merge(snapshot.Windows);
+            Merge(windows);
             SetStatus(NoticeFor(snapshot), $"{DateTime.Now:HH:mm:ss} 更新", StateBrush(snapshot));
             EvaluateAlert();
             UpdateTray();
