@@ -129,6 +129,31 @@ internal sealed class LimitsClient : IDisposable
         return !string.IsNullOrWhiteSpace(fromEnv) ? fromEnv : StoredToken;
     }
 
+    /// <summary>拿不到数据时，进一步说明是哪种情况——休眠会自动恢复，其它才需要用户处理。</summary>
+    internal enum Absence
+    {
+        /// <summary>Mirasim 在，但代理端口关了：休眠中，唤醒后自动恢复。</summary>
+        Sleeping,
+        /// <summary>Mirasim 进程都不在了。</summary>
+        NotRunning,
+        /// <summary>有端口却连不上或没数据，罕见。</summary>
+        Unreachable
+    }
+
+    /// <summary>NotReachable 时调用，区分休眠 / 未运行 / 真连不上。</summary>
+    internal static Absence DiagnoseAbsence()
+    {
+        if (!LocalPorts.ProcessRunning(ProxyProcessName))
+        {
+            return Absence.NotRunning;
+        }
+
+        // 进程在、却没有监听端口，就是休眠把端口关了
+        return LocalPorts.LoopbackListenersOf(ProxyProcessName).Count > 0
+            ? Absence.Unreachable
+            : Absence.Sleeping;
+    }
+
     private static IEnumerable<Uri> EnumerateCandidates()
     {
         // 1) 从带环境的会话里启动时，代理地址就在环境变量里

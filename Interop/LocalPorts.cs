@@ -15,6 +15,19 @@ internal static class LocalPorts
     private const uint Loopback = 0x0100007F;  // 127.0.0.1，网络字节序
     private const uint AnyAddress = 0x00000000; // 0.0.0.0 也覆盖回环
 
+    /// <summary>指定进程是否在运行（用来区分「休眠关端口」和「进程都没了」）。</summary>
+    internal static bool ProcessRunning(string processName)
+    {
+        try
+        {
+            return Process.GetProcessesByName(processName).Length > 0;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>按进程名（不含 .exe）取它监听的回环端口，按端口号排序。</summary>
     internal static IReadOnlyList<int> LoopbackListenersOf(string processName)
     {

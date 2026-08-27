@@ -34,6 +34,9 @@ public partial class MainWindow : GlassWindow
     /// <summary>当前的故障说明（不含倒计时）；为 null 表示一切正常。</summary>
     private string? _errorNotice;
 
+    /// <summary>故障是否需要用户处理：休眠会自动恢复，就用中性色不报警。</summary>
+    private bool _errorActionable;
+
     /// <summary>位置恢复完成前不记录移动，否则会把本次启动的默认位置覆盖掉存档。</summary>
     private bool _positionRestored;
 
@@ -338,10 +341,7 @@ public partial class MainWindow : GlassWindow
             var result = await _client.FetchAsync(_shutdown.Token);
             if (result is not { Status: FetchStatus.Ok, Data: { Windows: { Count: > 0 } windows } snapshot })
             {
-                // 认证失败要单独说，否则用户会以为是代理没开而白白重启它
-                _errorNotice = result.Status == FetchStatus.Unauthorized
-                    ? "Token 无效，请在设置里更新"
-                    : "找不到本地代理";
+                ClassifyFailure(result.Status);
                 BackOff();
                 UpdateRetryCountdown();
                 return;
@@ -371,7 +371,38 @@ public partial class MainWindow : GlassWindow
     }
 
     /// <summary>
+    /// 把失败原因分成两类：休眠会自动恢复，用中性色、说明会自动重连；
+    /// token 失效或没开需要用户处理，用告警色。
+    /// </summary>
+    private void ClassifyFailure(FetchStatus status)
+    {
+        if (status == FetchStatus.Unauthorized)
+        {
+            _errorNotice = "Token 失效，请在设置里更新";
+            _errorActionable = true;
+            return;
+        }
+
+        switch (LimitsClient.DiagnoseAbsence())
+        {
+            case LimitsClient.Absence.Sleeping:
+                _errorNotice = "代理休眠中";
+                _errorActionable = false;
+                break;
+            case LimitsClient.Absence.NotRunning:
+                _errorNotice = "Mirasim 未运行";
+                _errorActionable = true;
+                break;
+            default:
+                _errorNotice = "找不到本地代理";
+                _errorActionable = true;
+                break;
+        }
+    }
+
+    /// <summary>
     /// 故障状态下那行「N 秒后重试」得自己走。只在失败瞬间写一次的话，
+
     /// 显示的是退避间隔有多长，而不是还剩多久重试。
     /// </summary>
     private void UpdateRetryCountdown()
@@ -384,10 +415,12 @@ public partial class MainWindow : GlassWindow
         var left = _retryInterval - (DateTime.UtcNow - _lastAttemptUtc);
         var seconds = (int)Math.Ceiling(Math.Max(0d, left.TotalSeconds));
 
+        // 休眠这类会自动恢复的，说「N 秒后重连」；需要用户处理的才说「重试」并报警色
+        var verb = _errorActionable ? "重试" : "重连";
         SetStatus(
-            seconds > 0 ? $"{_errorNotice} · {seconds}s 后重试" : $"{_errorNotice} · 正在重试",
+            seconds > 0 ? $"{_errorNotice} · {seconds}s 后{verb}" : $"{_errorNotice} · 正在{verb}",
             string.Empty,
-            Theme.Critical);
+            _errorActionable ? Theme.Critical : Theme.Accent);
     }
 
     /// <summary>连不上就逐步拉长间隔，成功后由调用方恢复成设置里的间隔。</summary>
