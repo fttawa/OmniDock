@@ -25,6 +25,8 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
     private Brush _projectionBrush = Theme.AccentSoft;
     private Brush _forecastBrush = Theme.Accent;
     private DateTimeOffset _resetAt;
+    private LongTermRate? _history;
+    private string? _forecastTip;
 
     internal UsageWindowViewModel(UsageWindowDto dto) => Update(dto);
 
@@ -101,6 +103,13 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
         private set => Set(ref _forecastBrush, value);
     }
 
+    /// <summary>预测依据的展开说明，鼠标停在那行字上时显示。</summary>
+    public string? ForecastTip
+    {
+        get => _forecastTip;
+        private set => Set(ref _forecastTip, value);
+    }
+
     /// <summary>按当前速率会在重置之前用光。</summary>
     internal bool WillRunOut
     {
@@ -148,6 +157,12 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
                         : $"{left.Seconds} 秒后重置";
     }
 
+    /// <summary>
+    /// 喂进从历史里读出来的长期节奏。窗口内样本还不够长时改用它推算，
+    /// 这样 7 天窗口每次重置后不必再空等一天。
+    /// </summary>
+    internal void SetHistory(LongTermRate? rate) => _history = rate;
+
     /// <summary>换了强调色之后重算配色，不必等下一次请求。</summary>
     internal void RefreshAccent() => BarBrush = BrushFor(Percent);
 
@@ -175,6 +190,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             WillRunOut = true;
             SetProjection(100d);
             ForecastText = "额度已用尽";
+            ForecastTip = null;
             ForecastBrush = Theme.Critical;
             return;
         }
@@ -185,6 +201,7 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             WillRunOut = false;
             SetProjection(Percent);
             ForecastText = "窗口刚开始";
+            ForecastTip = null;
             ForecastBrush = Muted;
             return;
         }
@@ -194,28 +211,56 @@ internal sealed class UsageWindowViewModel : INotifyPropertyChanged
             WillRunOut = false;
             SetProjection(Percent);
             ForecastText = "本窗口暂无消耗";
+            ForecastTip = null;
             ForecastBrush = Muted;
             return;
         }
 
-        // 样本还没覆盖一个昼夜：报现状，不外推。缓冲段也不画——
-        // 画出来就等于宣称「接下来会一直这么用」，而这正是要避免的那个假设
+        // 窗口内样本还没覆盖一个昼夜。历史里若已攒够跨昼夜的记录，就拿它来推
+        // ——它同样含着休息时间，只是不随窗口重置清零。
+        var rate = sample.PerMinute;
+        var rateText = $"均 {rate:N0}/分";
+
         if (!sample.Representative)
         {
-            WillRunOut = false;
-            SetProjection(Percent);
-            ForecastText = UsageForecast.EvenRate(Name, _budget) is { } even
-                ? $"现 {sample.PerMinute:N0}/分 · 匀速 {even:N0}/分"
-                : $"现 {sample.PerMinute:N0}/分";
-            ForecastBrush = Muted;
-            return;
+            if (_history is not { } history)
+            {
+                // 连历史也没有：报现状，不外推。缓冲段也不画——画出来
+                // 就等于宣称「接下来会一直这么用」，而这正是要避免的那个假设
+                WillRunOut = false;
+                SetProjection(Percent);
+                ForecastText = UsageForecast.EvenRate(Name, _budget) is { } even
+                    ? $"现 {rate:N0}/分 · 匀速 {even:N0}/分"
+                    : $"现 {rate:N0}/分";
+                ForecastTip = "窗口刚开始不久，历史也还不满一天，暂不外推。"
+                    + "「匀速」是把额度均分到整个窗口的速率，用来对照当前快慢";
+                ForecastBrush = Muted;
+                return;
+            }
+
+            rate = history.PerMinute;
+            rateText = $"近 {Math.Max(1, (int)Math.Round(history.Span.TotalDays))} 天 {rate:N0}/分";
+
+            // 把摊平前的样子也说清楚：这个平均之所以远低于当前强度，
+            // 就是因为一天里大半时间根本没在用
+            ForecastTip = history.ActiveFraction > 0d
+                ? $"取自最近 {history.Span.TotalHours:0} 小时的记录：其中约 {history.ActiveFraction * 100d:0}% 的时间在消耗，"
+                  + $"活跃时约 {rate / history.ActiveFraction:N0}/分，摊到全天就是 {rate:N0}/分"
+                : $"取自最近 {history.Span.TotalHours:0} 小时的记录";
+        }
+
+        if (sample.Representative)
+        {
+            // 只有跨天窗口才拿「够不够一个昼夜」说事，5 小时窗口的门槛不是这个
+            ForecastTip = UsageForecast.ParseWindowLength(Name) is { TotalDays: >= 1d }
+                ? "按本窗口开始至今的平均消耗推算——这段已经跨过完整的昼夜，含得上休息时间"
+                : "按本窗口开始至今的平均消耗推算";
         }
 
         var untilReset = _resetAt - now;
-        var projection = UsageForecast.Project(_used, _budget, sample.PerMinute, untilReset);
+        var projection = UsageForecast.Project(_used, _budget, rate, untilReset);
         SetProjection(projection.ProjectedPercent);
 
-        var rateText = $"均 {sample.PerMinute:N0}/分";
         if (projection.ExhaustIn is { } exhaust && exhaust < untilReset)
         {
             WillRunOut = true;

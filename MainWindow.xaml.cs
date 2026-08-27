@@ -15,6 +15,7 @@ public partial class MainWindow : GlassWindow
     private static readonly TimeSpan MaxRetryInterval = TimeSpan.FromSeconds(20);
 
     private readonly LimitsClient _client = new();
+    private readonly UsageHistory _history = new();
     private readonly ObservableCollection<UsageWindowViewModel> _windows = [];
     private readonly CancellationTokenSource _shutdown = new();
     private readonly DispatcherTimer _heartbeat;
@@ -217,6 +218,7 @@ public partial class MainWindow : GlassWindow
         _settings.WindowLeft = Left;
         _settings.WindowTop = Top;
         SettingsStore.Save(_settings);
+        _history.Flush();
         base.OnClosed(e);
     }
 
@@ -350,6 +352,15 @@ public partial class MainWindow : GlassWindow
             _errorNotice = null;
             _retryInterval = _refreshInterval;
             Merge(windows);
+
+            // 先记账再取用：这一拍的数据也该算进长期节奏里
+            var now = DateTimeOffset.Now;
+            _history.Record(now, windows);
+            foreach (var window in _windows)
+            {
+                window.SetHistory(_history.RateOf(window.Name, now));
+            }
+
             SetStatus(NoticeFor(snapshot), $"{DateTime.Now:HH:mm:ss} 更新", StateBrush(snapshot));
             EvaluateAlert();
             UpdateTray();

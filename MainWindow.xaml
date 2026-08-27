@@ -141,7 +141,10 @@
                             <TextBlock Text="{Binding ForecastText}"
                                        Foreground="{Binding ForecastBrush}"
                                        FontSize="10"
-                                       Margin="0,5,0,0" />
+                                       Margin="0,5,0,0"
+                                       ToolTip="{Binding ForecastTip}"
+                                       ToolTipService.InitialShowDelay="400"
+                                       ToolTipService.ShowDuration="20000" />
                         </StackPanel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>

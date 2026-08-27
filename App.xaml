@@ -234,5 +234,23 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
+        <!-- 说明性的提示会有两三行，默认模板不换行会拉成很长一条 -->
+        <Style TargetType="ToolTip">
+            <Setter Property="MaxWidth" Value="270" />
+            <Setter Property="Background" Value="#F21C1C1E" />
+            <Setter Property="Foreground" Value="#E8FFFFFF" />
+            <Setter Property="BorderBrush" Value="#26FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="9,6" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="ContentTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" LineHeight="16" />
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
     </Application.Resources>
 </Application>
