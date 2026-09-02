@@ -147,8 +147,27 @@
                           Unchecked="OnCloseToTrayChanged" />
             </Grid>
 
-            <!-- 入口 Token：代理重启会换新，从会话启动时自动续上，这里可手动兜底 -->
+            <!-- 入口地址：新版代理把凭据放进了 URL 路径，这个比 token 更要紧。
+                 两者都是代理重启就换新，从会话启动时自动续上，这里可手动兜底 -->
             <Grid Margin="0,14,0,0">
+                <TextBlock Text="入口地址" Style="{StaticResource SettingLabelStyle}" />
+                <TextBlock x:Name="BaseUrlState" Style="{StaticResource SettingValueStyle}" />
+            </Grid>
+            <Border Margin="0,5,0,0"
+                    Background="#14FFFFFF"
+                    CornerRadius="5"
+                    Padding="7,4,7,4">
+                <TextBox x:Name="BaseUrlBox"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="#E8FFFFFF"
+                         FontSize="11"
+                         CaretBrush="#E8FFFFFF"
+                         ToolTip="形如 http://127.0.0.1:53424/&lt;一长串随机路径&gt;，即会话里的 ANTHROPIC_BASE_URL"
+                         TextChanged="OnBaseUrlChanged" />
+            </Border>
+
+            <Grid Margin="0,10,0,0">
                 <TextBlock Text="入口 Token" Style="{StaticResource SettingLabelStyle}" />
                 <TextBlock x:Name="TokenState" Style="{StaticResource SettingValueStyle}" />
             </Grid>

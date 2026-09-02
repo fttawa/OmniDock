@@ -62,8 +62,9 @@ public partial class SettingsWindow : GlassWindow
         // 自启的真实状态在注册表里，不在配置里
         AutoStartToggle.IsChecked = AutoStart.IsEnabled();
 
+        BaseUrlBox.Text = _settings.AuthBaseUrl;
         TokenBox.Password = _settings.AuthToken;
-        UpdateTokenState();
+        UpdateCredentialState();
 
         foreach (var toggle in new[] { TopmostToggle, TickerToggle, AlertsToggle, AutoStartToggle, TrayToggle, CloseToTrayToggle })
         {
@@ -204,21 +205,44 @@ public partial class SettingsWindow : GlassWindow
         Commit();
     }
 
-    /// <summary>只露前几位，够辨认是不是当前那个就行，不把凭据整个摊在屏幕上。</summary>
-    private void UpdateTokenState()
+    /// <summary>
+    /// 两个凭据都只显示够辨认的一小段，不把它们整个摊在屏幕上。
+    /// 「自动」表示和当前会话环境里的一致，也就是刚续过、应该是新鲜的。
+    /// </summary>
+    private void UpdateCredentialState()
     {
-        var token = _settings.AuthToken;
-        if (string.IsNullOrWhiteSpace(token))
+        BaseUrlState.Text = Describe(_settings.AuthBaseUrl, "ANTHROPIC_BASE_URL", url =>
         {
-            TokenState.Text = "未设置";
+            // 地址的辨识点在端口，路径那一长串随机字符看了也记不住
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? $":{uri.Port}" : url[..Math.Min(12, url.Length)];
+        });
+
+        TokenState.Text = Describe(_settings.AuthToken, "ANTHROPIC_AUTH_TOKEN",
+            token => token.Length > 7 ? token[..7] + "…" : token);
+    }
+
+    private static string Describe(string stored, string variable, Func<string, string> summarize)
+    {
+        if (string.IsNullOrWhiteSpace(stored))
+        {
+            return "未设置";
+        }
+
+        var fromEnv = Environment.GetEnvironmentVariable(variable);
+        var live = !string.IsNullOrWhiteSpace(fromEnv) && fromEnv == stored;
+        return live ? $"{summarize(stored)}（自动）" : summarize(stored);
+    }
+
+    private void OnBaseUrlChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
             return;
         }
 
-        var fromEnv = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
-        var live = !string.IsNullOrWhiteSpace(fromEnv) && fromEnv == token;
-        var head = token.Length > 7 ? token[..7] : token;
-
-        TokenState.Text = live ? $"{head}…（自动）" : $"{head}…";
+        _settings.AuthBaseUrl = BaseUrlBox.Text.Trim();
+        UpdateCredentialState();
+        Commit();
     }
 
     private void OnTokenChanged(object sender, RoutedEventArgs e)
@@ -229,7 +253,7 @@ public partial class SettingsWindow : GlassWindow
         }
 
         _settings.AuthToken = TokenBox.Password.Trim();
-        UpdateTokenState();
+        UpdateCredentialState();
         Commit();
     }
 
@@ -307,7 +331,7 @@ public partial class SettingsWindow : GlassWindow
         _settings.EnableAlerts = defaults.EnableAlerts;
         _settings.ShowTrayIcon = defaults.ShowTrayIcon;
         _settings.CloseToTray = defaults.CloseToTray;
-        // AuthToken 不恢复默认：清掉它程序就直接失联了，而且它不算外观设置
+        // AuthToken / AuthBaseUrl 不恢复默认：清掉程序就直接失联了，而且它们不算外观设置
 
         Theme.SetAccent(_settings.AccentColor);
         _loading = true;

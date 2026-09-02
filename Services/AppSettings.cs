@@ -51,6 +51,15 @@ internal sealed class AppSettings
     /// </summary>
     public string AuthToken { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 本地代理的完整入口地址，形如 <c>http://127.0.0.1:53424/&lt;43 位随机路径&gt;</c>。
+    ///
+    /// 新版代理把凭据搬进了 URL 路径：带上这段路径即使不带 token 也能通，少了它
+    /// 则一律 401。端口和路径每次启动都换，也都只注入会话环境、不落盘，所以跟
+    /// token 一样——从会话里启动时顺手存下来，双击和开机自启才有得用。
+    /// </summary>
+    public string AuthBaseUrl { get; set; } = string.Empty;
+
     /// <summary>上次关闭时的窗口位置；为空表示还没记过，用默认的右上角。</summary>
     public double? WindowLeft { get; set; }
 

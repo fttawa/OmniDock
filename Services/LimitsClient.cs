@@ -49,6 +49,9 @@ internal sealed class LimitsClient : IDisposable
     /// <summary>用户手填或上次自动存下的 token；会话环境里有值时优先用环境里的。</summary>
     internal string? StoredToken { get; set; }
 
+    /// <summary>同上，但是完整入口地址（含路径凭据）。</summary>
+    internal string? StoredBaseUrl { get; set; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -151,21 +154,29 @@ internal sealed class LimitsClient : IDisposable
             : Absence.Sleeping;
     }
 
-    private static IEnumerable<Uri> EnumerateCandidates()
+    private IEnumerable<Uri> EnumerateCandidates()
     {
-        // 1) 从带环境的会话里启动时，代理地址就在环境变量里
+        // 1) 从带环境的会话里启动时，完整入口（端口 + 路径凭据）就在环境变量里
         if (Uri.TryCreate(Environment.GetEnvironmentVariable("ANTHROPIC_BASE_URL"), UriKind.Absolute, out var fromEnv))
         {
             yield return fromEnv;
         }
 
-        // 2) 上次成功的端点，多数情况下仍然有效
+        // 2) 上次从会话里存下的入口，双击启动时全靠它
+        if (Uri.TryCreate(StoredBaseUrl, UriKind.Absolute, out var stored))
+        {
+            yield return stored;
+        }
+
+        // 3) 上次成功的端点，同一次代理运行期间仍然有效
         if (ReadCachedEndpoint() is { } cached)
         {
             yield return cached;
         }
 
-        // 3) 兜底：反查代理进程正在监听的回环端口
+        // 4) 兜底：反查代理进程监听的回环端口。新版代理把凭据放进了路径，
+        //    光有端口是拼不出可用地址的，但留着不亏——早期版本对回环免认证，
+        //    而且这能把「代理确实在跑」和「进程都没了」区分开
         foreach (var port in LocalPorts.LoopbackListenersOf(ProxyProcessName))
         {
             yield return new Uri($"http://127.0.0.1:{port}");

@@ -47,8 +47,9 @@ public partial class MainWindow : GlassWindow
         _refreshInterval = TimeSpan.FromSeconds(_settings.RefreshSeconds);
         _retryInterval = _refreshInterval;
 
-        AdoptTokenFromEnvironment();
+        AdoptCredentialsFromEnvironment();
         _client.StoredToken = _settings.AuthToken;
+        _client.StoredBaseUrl = _settings.AuthBaseUrl;
 
         InitializeComponent();
         WindowsList.ItemsSource = _windows;
@@ -74,19 +75,34 @@ public partial class MainWindow : GlassWindow
     }
 
     /// <summary>
-    /// 代理的入口 token 只注入会话环境、不落盘，每次代理重启还会换新。
+    /// 代理的入口（地址 + token）只注入会话环境、不落盘，每次代理重启还会换新。
     /// 从会话里启动时顺手存一份，这样之后双击或开机自启也能用。
+    ///
+    /// 地址比 token 更要紧：新版把凭据放进了 URL 路径，光靠反查端口拼不出来。
     /// </summary>
-    private void AdoptTokenFromEnvironment()
+    private void AdoptCredentialsFromEnvironment()
     {
-        var fromEnv = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN");
-        if (string.IsNullOrWhiteSpace(fromEnv) || fromEnv == _settings.AuthToken)
+        var changed = false;
+
+        if (Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN") is { Length: > 0 } token
+            && token != _settings.AuthToken)
         {
-            return;
+            _settings.AuthToken = token;
+            changed = true;
         }
 
-        _settings.AuthToken = fromEnv;
-        SettingsStore.Save(_settings);
+        if (Environment.GetEnvironmentVariable("ANTHROPIC_BASE_URL") is { Length: > 0 } baseUrl
+            && baseUrl != _settings.AuthBaseUrl
+            && Uri.TryCreate(baseUrl, UriKind.Absolute, out _))
+        {
+            _settings.AuthBaseUrl = baseUrl;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            SettingsStore.Save(_settings);
+        }
     }
 
     /// <summary>托盘点一下：藏起来的显示出来，显示中的藏起来。</summary>
@@ -264,6 +280,7 @@ public partial class MainWindow : GlassWindow
 
         _tray.Visible = _settings.ShowTrayIcon;
         _client.StoredToken = _settings.AuthToken;
+        _client.StoredBaseUrl = _settings.AuthBaseUrl;
     }
 
     /// <summary>
@@ -389,16 +406,16 @@ public partial class MainWindow : GlassWindow
     {
         if (status == FetchStatus.Unauthorized)
         {
-            // 会话 hook 可能已把新 token 写进配置文件，重读一次看看——
-            // 正在运行的实例把 token 存在内存里，不会自己重读
-            if (ReloadStoredToken())
+            // 会话 hook 可能已把新入口写进配置文件，重读一次看看——
+            // 正在运行的实例把它们存在内存里，不会自己重读
+            if (ReloadStoredCredentials())
             {
-                _errorNotice = "Token 已更新，重连中";
+                _errorNotice = "入口已更新，重连中";
                 _errorActionable = false;
                 return;
             }
 
-            _errorNotice = "Token 失效，请在设置里更新";
+            _errorNotice = "入口已失效，需要新地址";
             _errorActionable = true;
             return;
         }
@@ -444,21 +461,34 @@ public partial class MainWindow : GlassWindow
     }
 
     /// <summary>从磁盘重读 token（会话 hook 可能刚更新过）；确实变了就装载并返回 true。</summary>
-    private bool ReloadStoredToken()
+    private bool ReloadStoredCredentials()
     {
-        var latest = SettingsStore.Load().AuthToken;
-        if (string.IsNullOrEmpty(latest) || latest == _settings.AuthToken)
+        var latest = SettingsStore.Load();
+        var changed = false;
+
+        if (!string.IsNullOrEmpty(latest.AuthBaseUrl) && latest.AuthBaseUrl != _settings.AuthBaseUrl)
         {
-            return false;
+            _settings.AuthBaseUrl = latest.AuthBaseUrl;
+            _client.StoredBaseUrl = latest.AuthBaseUrl;
+            changed = true;
         }
 
-        _settings.AuthToken = latest;
-        _client.StoredToken = latest;
-        _retryInterval = _refreshInterval; // 有新 token，别退避，尽快重试
-        return true;
+        if (!string.IsNullOrEmpty(latest.AuthToken) && latest.AuthToken != _settings.AuthToken)
+        {
+            _settings.AuthToken = latest.AuthToken;
+            _client.StoredToken = latest.AuthToken;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            _retryInterval = _refreshInterval; // 有新入口，别退避，尽快重试
+        }
+
+        return changed;
     }
 
-        /// <summary>连不上就逐步拉长间隔，成功后由调用方恢复成设置里的间隔。</summary>
+    /// <summary>连不上就逐步拉长间隔，成功后由调用方恢复成设置里的间隔。</summary>
     private void BackOff()
         => _retryInterval = TimeSpan.FromSeconds(
             Math.Min(_retryInterval.TotalSeconds * 2d, MaxRetryInterval.TotalSeconds));
