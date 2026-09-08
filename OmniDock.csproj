@@ -26,4 +26,9 @@
     <Using Remove="System.Drawing" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 读进程命令行找代理入口用的（Interop/ProxyEntryScan.cs） -->
+    <PackageReference Include="System.Management" Version="9.0.0" />
+  </ItemGroup>
+
 </Project>

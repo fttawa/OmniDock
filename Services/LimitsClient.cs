@@ -52,6 +52,12 @@ internal sealed class LimitsClient : IDisposable
     /// <summary>同上，但是完整入口地址（含路径凭据）。</summary>
     internal string? StoredBaseUrl { get; set; }
 
+    /// <summary>
+    /// 这次成功用的入口和存档里的不是一个——调用方读到之后应该落盘。
+    /// 读一次就清掉，避免反复写同一个值。
+    /// </summary>
+    internal string? DiscoveredEntry { get; set; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -71,6 +77,10 @@ internal sealed class LimitsClient : IDisposable
     };
 
     private Uri? _knownEndpoint;
+
+    /// <summary>命令行扫描要一秒多，失败重试时别每次都来一遍。</summary>
+    private static readonly TimeSpan ScanCooldown = TimeSpan.FromSeconds(30);
+    private DateTime _lastScan = DateTime.MinValue;
 
     /// <summary>当前生效的端点，拿不到数据时为 null。</summary>
     internal Uri? Endpoint => _knownEndpoint;
@@ -100,10 +110,10 @@ internal sealed class LimitsClient : IDisposable
 
             if (attempt.Status == FetchStatus.Unauthorized)
             {
-                // 这个端口确实是代理，记下来；继续试别的端口万一有免认证的
+                // 401 说明这个端口是代理，但少了路径凭据。既不记成已知端点也不缓存：
+                // 它永远不会成功，留着只会在下次抢在真正可用的候选前面白跑一趟。
+                // 只记一笔，用来把「认证不过」和「压根找不到」分开报
                 sawAuthFailure = true;
-                _knownEndpoint = candidate;
-                SaveCachedEndpoint(candidate);
                 continue;
             }
 
@@ -114,6 +124,14 @@ internal sealed class LimitsClient : IDisposable
 
             _knownEndpoint = candidate;
             SaveCachedEndpoint(candidate);
+
+            // 环境变量和存档之外的来源（缓存、扫描）也值得记进设置，
+            // 这样下次冷启动不必再扫一遍
+            if (candidate.AbsoluteUri.TrimEnd('/') != (StoredBaseUrl ?? string.Empty).TrimEnd('/'))
+            {
+                DiscoveredEntry = candidate.AbsoluteUri;
+            }
+
             return attempt;
         }
 
@@ -174,12 +192,24 @@ internal sealed class LimitsClient : IDisposable
             yield return cached;
         }
 
-        // 4) 兜底：反查代理进程监听的回环端口。新版代理把凭据放进了路径，
+        // 4) 反查代理进程监听的回环端口。新版代理把凭据放进了路径，
         //    光有端口是拼不出可用地址的，但留着不亏——早期版本对回环免认证，
         //    而且这能把「代理确实在跑」和「进程都没了」区分开
         foreach (var port in LocalPorts.LoopbackListenersOf(ProxyProcessName))
         {
             yield return new Uri($"http://127.0.0.1:{port}");
+        }
+
+        // 5) 最后一招：从别的 CLI 会话的命令行里捞入口。上面几条都靠「之前见过」，
+        //    只有这条能在代理重启后凭当下的机器状态重新发现，代价是要一秒多，
+        //    所以摆在最末尾、且下面还压了节流
+        if (_lastScan + ScanCooldown <= DateTime.UtcNow)
+        {
+            _lastScan = DateTime.UtcNow;
+            foreach (var scanned in ProxyEntryScan.Candidates())
+            {
+                yield return scanned;
+            }
         }
     }
 

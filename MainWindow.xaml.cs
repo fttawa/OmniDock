@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -25,6 +26,7 @@ public partial class MainWindow : GlassWindow
     private readonly TrayIcon _tray = new();
 
     private SettingsWindow? _settingsWindow;
+    private FileSystemWatcher? _settingsWatcher;
     private bool _alerting;
     private bool _exiting;
     private TimeSpan _refreshInterval;
@@ -105,6 +107,59 @@ public partial class MainWindow : GlassWindow
         }
     }
 
+    /// <summary>
+    /// 这次成功用的入口如果不是存档里那个（来自端点缓存或命令行扫描），记下来。
+    /// 下次冷启动就能直接用，不必再扫一遍。
+    /// </summary>
+    private void PersistDiscoveredEntry()
+    {
+        if (_client.DiscoveredEntry is not { Length: > 0 } entry)
+        {
+            return;
+        }
+
+        _client.DiscoveredEntry = null;
+        _settings.AuthBaseUrl = entry;
+        _client.StoredBaseUrl = entry;
+        SettingsStore.Save(_settings);
+    }
+
+    /// <summary>
+    /// 会话 hook 会在代理换新入口后改写设置文件。盯着它，一有改动立刻重试——
+    /// 否则失联时正卡在退避里，最长要等 20 秒才会去看一眼。
+    /// </summary>
+    private void WatchSettingsFile()
+    {
+        try
+        {
+            var path = SettingsStore.DirectoryPath;
+            Directory.CreateDirectory(path);
+
+            _settingsWatcher = new FileSystemWatcher(path, "settings.json")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true
+            };
+
+            _settingsWatcher.Changed += (_, _) => Dispatcher.BeginInvoke(async () =>
+            {
+                // 只在失联时才管：正常运行时这个文件是我们自己在写
+                if (_errorNotice is null || !ReloadStoredCredentials())
+                {
+                    return;
+                }
+
+                _errorNotice = "入口已更新，重连中";
+                _errorActionable = false;
+                await ForceRefreshAsync();
+            });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // 监听不了就退回原来的行为：退避到点了自然会重读
+        }
+    }
+
     /// <summary>托盘点一下：藏起来的显示出来，显示中的藏起来。</summary>
     private void ToggleVisibility()
     {
@@ -135,6 +190,7 @@ public partial class MainWindow : GlassWindow
         RootBorder.BeginAnimation(OpacityProperty,
             new DoubleAnimation(0d, 1d, new Duration(TimeSpan.FromMilliseconds(220))));
 
+        WatchSettingsFile();
         _heartbeat.Start();
         await RefreshAsync();
     }
@@ -224,6 +280,7 @@ public partial class MainWindow : GlassWindow
     protected override void OnClosed(EventArgs e)
     {
         _tray.Dispose();
+        _settingsWatcher?.Dispose();
         _heartbeat.Stop();
         _positionSave.Stop();
         _shutdown.Cancel();
@@ -368,6 +425,7 @@ public partial class MainWindow : GlassWindow
 
             _errorNotice = null;
             _retryInterval = _refreshInterval;
+            PersistDiscoveredEntry();
             Merge(windows);
 
             // 先记账再取用：这一拍的数据也该算进长期节奏里

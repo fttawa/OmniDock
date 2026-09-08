@@ -98,10 +98,12 @@ internal static class SettingsStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
-    private static string FilePath => Path.Combine(
+    /// <summary>配置所在目录，监听文件变化的地方也要用。</summary>
+    internal static string DirectoryPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "OmniDock",
-        "settings.json");
+        "OmniDock");
+
+    private static string FilePath => Path.Combine(DirectoryPath, "settings.json");
 
     internal static AppSettings Load()
     {
