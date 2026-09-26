@@ -64,6 +64,7 @@ public partial class SettingsWindow : GlassWindow
 
         BaseUrlBox.Text = _settings.AuthBaseUrl;
         TokenBox.Password = _settings.AuthToken;
+        UpstreamBox.Text = _settings.UpstreamBaseUrl;
         UpdateCredentialState();
 
         foreach (var toggle in new[] { TopmostToggle, TickerToggle, AlertsToggle, AutoStartToggle, TrayToggle, CloseToTrayToggle })
@@ -211,6 +212,13 @@ public partial class SettingsWindow : GlassWindow
     /// </summary>
     private void UpdateCredentialState()
     {
+        // 上游地址是普通配置，直接显示主机名就够
+        UpstreamState.Text = string.IsNullOrWhiteSpace(_settings.UpstreamBaseUrl)
+            ? "只走本地代理"
+            : Uri.TryCreate(_settings.UpstreamBaseUrl, UriKind.Absolute, out var upstream)
+                ? upstream.Host
+                : "地址无效";
+
         BaseUrlState.Text = Describe(_settings.AuthBaseUrl, "ANTHROPIC_BASE_URL", url =>
         {
             // 地址的辨识点在端口，路径那一长串随机字符看了也记不住
@@ -231,6 +239,18 @@ public partial class SettingsWindow : GlassWindow
         var fromEnv = Environment.GetEnvironmentVariable(variable);
         var live = !string.IsNullOrWhiteSpace(fromEnv) && fromEnv == stored;
         return live ? $"{summarize(stored)}（自动）" : summarize(stored);
+    }
+
+    private void OnUpstreamChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _settings.UpstreamBaseUrl = UpstreamBox.Text.Trim();
+        UpdateCredentialState();
+        Commit();
     }
 
     private void OnBaseUrlChanged(object sender, RoutedEventArgs e)
@@ -331,6 +351,8 @@ public partial class SettingsWindow : GlassWindow
         _settings.EnableAlerts = defaults.EnableAlerts;
         _settings.ShowTrayIcon = defaults.ShowTrayIcon;
         _settings.CloseToTray = defaults.CloseToTray;
+        // 上游地址是普通配置，跟着恢复默认（指回 Mirasim 中转）
+        _settings.UpstreamBaseUrl = defaults.UpstreamBaseUrl;
         // AuthToken / AuthBaseUrl 不恢复默认：清掉程序就直接失联了，而且它们不算外观设置
 
         Theme.SetAccent(_settings.AccentColor);

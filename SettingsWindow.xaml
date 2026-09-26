@@ -147,10 +147,31 @@
                           Unchecked="OnCloseToTrayChanged" />
             </Grid>
 
+            <!-- 上游地址：直连拿额度打的就是 {这个地址}/v1/limits，认证用账号 token
+                 （从 Mirasim 的配置里解出来，不需要会话环境）。这是主路径；
+                 下面那对「入口地址 / Token」是直连不通时的回退 -->
+            <Grid Margin="0,14,0,0">
+                <TextBlock Text="上游地址" Style="{StaticResource SettingLabelStyle}" />
+                <TextBlock x:Name="UpstreamState" Style="{StaticResource SettingValueStyle}" />
+            </Grid>
+            <Border Margin="0,5,0,0"
+                    Background="#14FFFFFF"
+                    CornerRadius="5"
+                    Padding="7,4,7,4">
+                <TextBox x:Name="UpstreamBox"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="#E8FFFFFF"
+                         FontSize="11"
+                         CaretBrush="#E8FFFFFF"
+                         ToolTip="形如 https://relay.mirasim.ai；直连请求 {地址}/v1/limits。留空表示不走直连、只用本地代理"
+                         TextChanged="OnUpstreamChanged" />
+            </Border>
+
             <!-- 入口地址：新版代理把凭据放进了 URL 路径，这个比 token 更要紧。
                  两者都是代理重启就换新，从会话启动时自动续上，这里可手动兜底 -->
             <Grid Margin="0,14,0,0">
-                <TextBlock Text="入口地址" Style="{StaticResource SettingLabelStyle}" />
+                <TextBlock Text="入口地址（回退）" Style="{StaticResource SettingLabelStyle}" />
                 <TextBlock x:Name="BaseUrlState" Style="{StaticResource SettingValueStyle}" />
             </Grid>
             <Border Margin="0,5,0,0"

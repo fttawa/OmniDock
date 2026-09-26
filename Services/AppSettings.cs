@@ -57,8 +57,18 @@ internal sealed class AppSettings
     /// 新版代理把凭据搬进了 URL 路径：带上这段路径即使不带 token 也能通，少了它
     /// 则一律 401。端口和路径每次启动都换，也都只注入会话环境、不落盘，所以跟
     /// token 一样——从会话里启动时顺手存下来，双击和开机自启才有得用。
+    ///
+    /// 这是**回退路径**：能直连上游时用不到它。
     /// </summary>
     public string AuthBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 上游根地址：直连拿额度打的就是 <c>{这个地址}/v1/limits</c>，认证用账号 token
+    /// （从 Mirasim 配置里解出来，见 <see cref="MirasimCredentials"/>）。
+    ///
+    /// 默认是 Mirasim 中转。留空表示不走直连、只依赖本地代理。
+    /// </summary>
+    public string UpstreamBaseUrl { get; set; } = LimitsClient.DefaultUpstream;
 
     /// <summary>上次关闭时的窗口位置；为空表示还没记过，用默认的右上角。</summary>
     public double? WindowLeft { get; set; }

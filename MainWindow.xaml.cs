@@ -52,6 +52,7 @@ public partial class MainWindow : GlassWindow
         AdoptCredentialsFromEnvironment();
         _client.StoredToken = _settings.AuthToken;
         _client.StoredBaseUrl = _settings.AuthBaseUrl;
+        _client.UpstreamBaseUrl = _settings.UpstreamBaseUrl;
 
         InitializeComponent();
         WindowsList.ItemsSource = _windows;
@@ -338,6 +339,7 @@ public partial class MainWindow : GlassWindow
         _tray.Visible = _settings.ShowTrayIcon;
         _client.StoredToken = _settings.AuthToken;
         _client.StoredBaseUrl = _settings.AuthBaseUrl;
+        _client.UpstreamBaseUrl = _settings.UpstreamBaseUrl;
     }
 
     /// <summary>
@@ -436,7 +438,7 @@ public partial class MainWindow : GlassWindow
                 window.SetHistory(_history.RateOf(window.Name, now));
             }
 
-            SetStatus(NoticeFor(snapshot), $"{DateTime.Now:HH:mm:ss} 更新", StateBrush(snapshot));
+            SetStatus(NoticeFor(snapshot), $"{DateTime.Now:HH:mm:ss} 更新{SourceSuffix()}", StateBrush(snapshot));
             EvaluateAlert();
             UpdateTray();
         }
@@ -457,6 +459,17 @@ public partial class MainWindow : GlassWindow
     }
 
     /// <summary>
+    /// 数据是从哪来的：直连上游（拿账号 token 打 <c>/v1/limits</c>）还是本地代理。
+    /// 显示在刷新时间后面，一眼能看出走的是哪条路。
+    /// </summary>
+    private string SourceSuffix() => _client.LastSource switch
+    {
+        FetchSource.Upstream => " · 直连",
+        FetchSource.Proxy => " · 代理",
+        _ => string.Empty
+    };
+
+    /// <summary>
     /// 把失败原因分成两类：休眠会自动恢复，用中性色、说明会自动重连；
     /// token 失效或没开需要用户处理，用告警色。
     /// </summary>
@@ -474,6 +487,18 @@ public partial class MainWindow : GlassWindow
             }
 
             _errorNotice = "入口已失效，需要新地址";
+            _errorActionable = true;
+            return;
+        }
+
+        // 直连上游是主路径：它给出的原因（没登录 / token 过期 / 网络不通）比
+        // 「找不到本地代理」更接近根因，优先报它
+        if (_client.UpstreamNotice is { Length: > 0 } upstream)
+        {
+            var absence = LimitsClient.DiagnoseAbsence();
+            _errorNotice = absence == LimitsClient.Absence.NotRunning
+                ? upstream
+                : $"{upstream} · 代理也没数据";
             _errorActionable = true;
             return;
         }
